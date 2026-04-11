@@ -1,12 +1,14 @@
-use numpy::PyArray1;
+use numpy::{PyArray1, PyArray2, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use rayon::prelude::*;
 use sprs::CsMat;
 
 use crate::Decoder;
 use crate::bp::{Settings, SyndromeBpDecoder};
-use crate::bp_core::min_sum::SyndromeMinSumCore;
-use crate::bp_core::spa::SyndromeSpaCore;
+use crate::bp_core::{
+    SyndromeBpStrategy, min_sum::SyndromeMinSumCore, spa::SyndromeSpaCore,
+};
 
 #[pyclass(name = "SyndromeMinSumDecoder")]
 pub struct PySyndromeMinSumDecoder {
@@ -60,6 +62,35 @@ impl PySyndromeMinSumDecoder {
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result))
+    }
+
+    pub fn decode_batch<'py>(
+        &mut self,
+        py: Python<'py>,
+        syndromes: PyReadonlyArray2<'py, u8>,
+    ) -> PyResult<Bound<'py, PyArray2<u8>>> {
+        let syndromes_array = syndromes.as_array();
+        let num_syndromes = syndromes_array.shape()[0];
+
+        let syndromes_vec: Vec<Vec<u8>> = (0..num_syndromes)
+            .map(|i| syndromes_array.row(i).to_vec())
+            .collect();
+
+        let mut template = self.decoder.clone();
+        for edge in &mut template.core.get_state().edges {
+            edge.msg_vn_to_cn = 0.0;
+            edge.msg_cn_to_vn = 0.0;
+        }
+
+        let results: Vec<Vec<u8>> = py.detach(|| {
+            syndromes_vec
+                .par_iter()
+                .map(|s| template.clone().decode(s))
+                .collect()
+        });
+
+        PyArray2::from_vec2(py, &results)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 }
 
@@ -115,6 +146,35 @@ impl PySyndromeSpaDecoder {
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result))
+    }
+
+    pub fn decode_batch<'py>(
+        &mut self,
+        py: Python<'py>,
+        syndromes: PyReadonlyArray2<'py, u8>,
+    ) -> PyResult<Bound<'py, PyArray2<u8>>> {
+        let syndromes_array = syndromes.as_array();
+        let num_syndromes = syndromes_array.shape()[0];
+
+        let syndromes_vec: Vec<Vec<u8>> = (0..num_syndromes)
+            .map(|i| syndromes_array.row(i).to_vec())
+            .collect();
+
+        let mut template = self.decoder.clone();
+        for edge in &mut template.core.get_state().edges {
+            edge.msg_vn_to_cn = 0.0;
+            edge.msg_cn_to_vn = 0.0;
+        }
+
+        let results: Vec<Vec<u8>> = py.detach(|| {
+            syndromes_vec
+                .par_iter()
+                .map(|s| template.clone().decode(s))
+                .collect()
+        });
+
+        PyArray2::from_vec2(py, &results)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
     }
 }
 

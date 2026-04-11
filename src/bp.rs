@@ -22,6 +22,7 @@ pub struct Settings {
     pub max_iter: usize,
 }
 
+#[derive(Clone)]
 pub struct SyndromeBpDecoder<Core: SyndromeBpStrategy> {
     pub settings: Settings,
     pub core: Core,

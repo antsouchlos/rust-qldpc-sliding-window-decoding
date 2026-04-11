@@ -1,6 +1,7 @@
 use crate::bp_core::{Edge, SyndromeBpCore, SyndromeBpStrategy};
 use sprs::CsMat;
 
+#[derive(Clone)]
 pub struct PhiTable {
     table: Vec<f64>,
     dx_inv: f64,
@@ -53,6 +54,7 @@ impl Default for PhiTable {
     }
 }
 
+#[derive(Clone)]
 pub struct SyndromeSpaCore {
     state: SyndromeBpCore,
     phi_table: PhiTable,

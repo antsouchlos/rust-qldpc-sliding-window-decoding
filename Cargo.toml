@@ -9,10 +9,6 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [profile.release]
 debug = true
 
-[[bench]]                                                                                                                                                                                
-name = "decode"
-harness = false
-
 [lib]
 name = "rust_qldpc"
 crate-type = ["cdylib", "rlib"]
@@ -20,6 +16,7 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 numpy = "0.28.0"
 sprs = "0.11.4"
+rayon = "1"
 
 [dependencies.pyo3]
 version = "0.28.3"

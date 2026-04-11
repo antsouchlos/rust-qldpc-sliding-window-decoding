@@ -551,6 +551,7 @@ dependencies = [
  "criterion",
  "numpy",
  "pyo3",
+ "rayon",
  "sprs",
 ]
 

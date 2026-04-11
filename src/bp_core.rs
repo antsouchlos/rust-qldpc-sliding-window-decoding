@@ -5,6 +5,7 @@ use std::ops::Range;
 
 use sprs::CsMat;
 
+#[derive(Clone)]
 pub struct Edge {
     pub row: usize,
     pub col: usize,
@@ -12,6 +13,7 @@ pub struct Edge {
     pub msg_cn_to_vn: f64,
 }
 
+#[derive(Clone)]
 pub struct SyndromeBpCore {
     pub edges: Vec<Edge>,
     pub cn_ranges: Vec<Range<usize>>,

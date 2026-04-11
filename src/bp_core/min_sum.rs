@@ -1,6 +1,7 @@
 use crate::bp_core::{Edge, SyndromeBpCore, SyndromeBpStrategy};
 use sprs::CsMat;
 
+#[derive(Clone)]
 pub struct SyndromeMinSumCore(pub SyndromeBpCore);
 
 impl SyndromeBpStrategy for SyndromeMinSumCore {
