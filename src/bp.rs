@@ -1,3 +1,5 @@
+use sprs::CsMat;
+
 use crate::Decoder;
 use crate::bp_core::{SyndromeBpDecoderCore, compute_syndrome};
 
@@ -12,9 +14,23 @@ pub struct Settings {
     pub bp_method: BpMethod,
 }
 
-struct SyndromeBpDecoder {
-    settings: Settings,
-    core: SyndromeBpDecoderCore,
+pub struct SyndromeBpDecoder {
+    pub settings: Settings,
+    pub core: SyndromeBpDecoderCore,
+}
+
+impl SyndromeBpDecoder {
+    #[allow(non_snake_case)]
+    pub fn new(
+        settings: Settings,
+        H: &CsMat<u8>,
+        channel_llrs: &Vec<f64>,
+    ) -> Self {
+        Self {
+            settings,
+            core: SyndromeBpDecoderCore::new(H, channel_llrs),
+        }
+    }
 }
 
 // TODO: Doc comments

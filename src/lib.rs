@@ -1,7 +1,8 @@
-pub mod bp;
-pub mod bp_core;
+mod bp_core;
 
-// #[cfg(feature = "python")]
+pub mod bp;
+pub mod bpgd;
+
 mod python;
 
 pub trait Decoder {
@@ -13,10 +14,8 @@ pub trait SoftInitDecoder {
     fn decode(s: &[f64]) -> Vec<f64>;
 }
 
-// #[cfg(feature = "python")]
 use pyo3::prelude::*;
 
-// #[cfg(feature = "python")]
 #[pymodule]
 fn rust_qldpc(m: &Bound<'_, PyModule>) -> PyResult<()> {
     python::register(m)

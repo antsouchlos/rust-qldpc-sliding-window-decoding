@@ -1,15 +1,14 @@
-use numpy::{PyArray1};
+use numpy::PyArray1;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use sprs::CsMat;
 
-use crate::bp::{BpMethod, Settings};
-use crate::bp_core::{SyndromeBpDecoderCore, compute_syndrome};
+use crate::Decoder;
+use crate::bp::{BpMethod, Settings, SyndromeBpDecoder};
 
 #[pyclass(name = "SyndromeBpDecoder")]
 pub struct PyBpDecoder {
-    settings: Settings,
-    core: SyndromeBpDecoderCore,
+    decoder: SyndromeBpDecoder,
 }
 
 #[pymethods]
@@ -59,11 +58,14 @@ impl PyBpDecoder {
         let h_csr = CsMat::new(H_shape, indptr_u, indices_u, H_csr_data);
 
         Ok(Self {
-            core: SyndromeBpDecoderCore::new(&h_csr, &channel_llrs),
-            settings: Settings {
-                max_iter,
-                bp_method,
-            },
+            decoder: SyndromeBpDecoder::new(
+                Settings {
+                    max_iter: max_iter,
+                    bp_method: bp_method,
+                },
+                &h_csr,
+                &channel_llrs,
+            ),
         })
     }
 
@@ -72,42 +74,8 @@ impl PyBpDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
-        // let s = syndrome.as_slice()?;
-        let result = self.bp_decode(&syndrome);
-
+        let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result))
-    }
-}
-
-impl PyBpDecoder {
-    fn bp_decode(&mut self, s: &[u8]) -> Vec<u8> {
-        let mut e_hat: Vec<u8> = self
-            .core
-            .channel_llrs
-            .iter()
-            .map(|&v| if v < 0.0 { 1 } else { 0 })
-            .collect();
-
-        for _ in 0..self.settings.max_iter {
-            self.core.vn_update();
-            match self.settings.bp_method {
-                BpMethod::Spa => self.core.cn_update_spa(s),
-                BpMethod::MinSum => self.core.cn_update_min_sum(s),
-            }
-            self.core.total_llrs();
-
-            e_hat = self
-                .core
-                .total_llrs
-                .iter()
-                .map(|&v| if v < 0.0 { 1 } else { 0 })
-                .collect();
-
-            if compute_syndrome(&self.core.H_csc, &e_hat) == s {
-                break;
-            }
-        }
-        e_hat
     }
 }
 
