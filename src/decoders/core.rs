@@ -33,4 +33,5 @@ pub trait SyndromeBpStrategy {
     fn total_llrs(&mut self);
 
     fn get_state(&mut self) -> &mut SyndromeBpCore;
+    fn get_state_ref(&self) -> &SyndromeBpCore;
 }

@@ -186,6 +186,10 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
     fn get_state(&mut self) -> &mut SyndromeBpCore {
         &mut self.state
     }
+
+    fn get_state_ref(&self) -> &SyndromeBpCore {
+        &self.state
+    }
 }
 
 #[cfg(test)]

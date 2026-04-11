@@ -133,6 +133,10 @@ impl SyndromeBpStrategy for SyndromeMinSumCore {
     fn get_state(&mut self) -> &mut SyndromeBpCore {
         &mut self.0
     }
+
+    fn get_state_ref(&self) -> &SyndromeBpCore {
+        &self.0
+    }
 }
 
 #[cfg(test)]
