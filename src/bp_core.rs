@@ -1,17 +1,25 @@
 pub mod min_sum;
 pub mod spa;
 
+use std::ops::Range;
+
 use sprs::CsMat;
 
-#[allow(non_snake_case)]
+pub struct Edge {
+    pub row: usize,
+    pub col: usize,
+    pub msg_vn_to_cn: f64,
+    pub msg_cn_to_vn: f64,
+}
+
 pub struct SyndromeBpCore {
-    pub H_csc: CsMat<u8>,
-    pub H_csr: CsMat<u8>,
-    pub csr_to_csc: Vec<usize>,
+    pub edges: Vec<Edge>,
+    pub cn_ranges: Vec<Range<usize>>,
+    pub vn_indices: Vec<Vec<usize>>,
     pub channel_llrs: Vec<f64>,
-    pub msg_cn_to_vn: Vec<f64>,
-    pub msg_vn_to_cn: Vec<f64>,
     pub total_llrs: Vec<f64>,
+    pub num_vns: usize,
+    pub num_cns: usize,
 }
 
 pub trait SyndromeBpStrategy {

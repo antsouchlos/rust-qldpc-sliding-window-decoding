@@ -1,14 +1,9 @@
-use sprs::CsMat;
+use crate::{Decoder, bp_core::{Edge, SyndromeBpStrategy}};
 
-use crate::{Decoder, bp_core::SyndromeBpStrategy};
-
-#[allow(non_snake_case)]
-pub fn compute_syndrome(H: &CsMat<u8>, e_hat: &[u8]) -> Vec<u8> {
-    let mut syndrome = vec![0u8; H.rows()];
-    for (row_idx, row) in H.to_csr().outer_iterator().enumerate() {
-        for (col_idx, _) in row.iter() {
-            syndrome[row_idx] ^= e_hat[col_idx];
-        }
+pub fn compute_syndrome(edges: &[Edge], num_cns: usize, e_hat: &[u8]) -> Vec<u8> {
+    let mut syndrome = vec![0u8; num_cns];
+    for edge in edges {
+        syndrome[edge.row] ^= e_hat[edge.col];
     }
     syndrome
 }
@@ -26,7 +21,7 @@ impl<Core: SyndromeBpStrategy> SyndromeBpDecoder<Core> {
     #[allow(non_snake_case)]
     pub fn new(
         settings: Settings,
-        H: &CsMat<u8>,
+        H: &sprs::CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self {
         Self {
@@ -60,7 +55,8 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpDecoder<Core> {
                 .map(|&v| if v < 0.0 { 1 } else { 0 })
                 .collect();
 
-            let s_hat = compute_syndrome(&self.core.get_state().H_csc, &e_hat);
+            let state = self.core.get_state();
+            let s_hat = compute_syndrome(&state.edges, state.num_cns, &e_hat);
             if s_hat == s {
                 break;
             }
@@ -77,7 +73,7 @@ mod tests {
     use super::*;
 
     #[allow(non_snake_case)]
-    fn get_hamming_H() -> CsMat<u8> {
+    fn get_hamming_H() -> sprs::CsMat<u8> {
         #[allow(non_snake_case)]
         let mut H = TriMat::<u8>::new((3, 7));
 
@@ -102,9 +98,17 @@ mod tests {
         #[allow(non_snake_case)]
         let H = get_hamming_H();
 
+        // Build edges from H manually to test compute_syndrome
+        let mut edges = Vec::new();
+        for (row, row_vec) in H.outer_iterator().enumerate() {
+            for (col, _) in row_vec.iter() {
+                edges.push(Edge { row, col, msg_vn_to_cn: 0.0, msg_cn_to_vn: 0.0 });
+            }
+        }
+
         let e = vec![0, 1, 0, 1, 0, 1, 0];
         let s = vec![1, 0, 0];
 
-        assert_eq!(s, compute_syndrome(&H, &e));
+        assert_eq!(s, compute_syndrome(&edges, H.rows(), &e));
     }
 }

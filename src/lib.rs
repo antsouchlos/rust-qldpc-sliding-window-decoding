@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 pub mod bp;
 pub mod bp_core;
 pub mod bpgd;
+pub mod phi_table;
 
 mod python;
 

@@ -1,182 +1,131 @@
-use crate::bp_core::{SyndromeBpCore, SyndromeBpStrategy};
+use crate::bp_core::{Edge, SyndromeBpCore, SyndromeBpStrategy};
+use sprs::CsMat;
 
-use sprs::{CsMat, DenseVector};
-
-pub struct SyndromeMinSumCore(SyndromeBpCore);
-
-// TODO: Clean this up
-#[allow(non_snake_case)]
-fn get_csc_to_csr(H: &CsMat<u8>) -> Vec<usize> {
-    #[allow(non_snake_case)]
-    let H_csc = H.to_csc();
-    #[allow(non_snake_case)]
-    let H_csr = H.to_csr();
-    let nnz = H.nnz();
-
-    // cols_csc[i] = which column the i-th CSC nonzero belongs to
-    let mut cols_csc = Vec::with_capacity(nnz);
-    for col in 0..H_csc.cols() {
-        let count = H_csc.indptr().index(col + 1) - H_csc.indptr().index(col);
-        cols_csc.extend(std::iter::repeat(col).take(count));
-    }
-    // rows_csc = H_csc.indices (inner indices of CSC are row indices)
-    let rows_csc: Vec<usize> = H_csc.indices().to_vec();
-
-    // rows_csr[i] = which row the i-th CSR nonzero belongs to
-    let mut rows_csr = Vec::with_capacity(nnz);
-    for row in 0..H_csr.rows() {
-        let count = H_csr.indptr().index(row + 1) - H_csr.indptr().index(row);
-        rows_csr.extend(std::iter::repeat(row).take(count));
-    }
-    // cols_csr = H_csr.indices (inner indices of CSR are column indices)
-    let cols_csr: Vec<usize> = H_csr.indices().to_vec();
-
-    // csc_order = argsort of CSC nonzeros by (row, col)
-    // np.lexsort((cols_csc, rows_csc)) sorts primarily by rows_csc, secondarily by cols_csc
-    let mut csc_order: Vec<usize> = (0..nnz).collect();
-    csc_order.sort_by_key(|&i| (rows_csc[i], cols_csc[i]));
-
-    // csr_order = argsort of CSR nonzeros by (row, col)
-    let mut csr_order: Vec<usize> = (0..nnz).collect();
-    csr_order.sort_by_key(|&i| (rows_csr[i], cols_csr[i]));
-
-    // csr_to_csc[csr_order[k]] = csc_order[k]
-    // i.e. for the k-th nonzero in (row,col) order, map its CSR index to its CSC index
-    let mut csr_to_csc = vec![0usize; nnz];
-    for k in 0..nnz {
-        csr_to_csc[csr_order[k]] = csc_order[k];
-    }
-
-    csr_to_csc
-}
+pub struct SyndromeMinSumCore(pub SyndromeBpCore);
 
 impl SyndromeBpStrategy for SyndromeMinSumCore {
     #[allow(non_snake_case)]
     fn new(H: &CsMat<u8>, channel_llrs: &[f64]) -> Self {
-        Self {
-            0: SyndromeBpCore {
-                H_csc: H.to_csc(),
-                H_csr: H.to_csr(),
-                csr_to_csc: get_csc_to_csr(&H),
-                channel_llrs: Vec::<f64>::from(channel_llrs),
-                msg_cn_to_vn: Vec::<f64>::zeros(H.nnz()),
-                msg_vn_to_cn: Vec::<f64>::zeros(H.nnz()),
-                total_llrs: Vec::<f64>::zeros(H.cols()),
-            },
+        let H_csr = H.to_csr();
+        let num_cns = H_csr.rows();
+        let num_vns = H_csr.cols();
+        let nnz = H_csr.nnz();
+
+        let mut edges = Vec::with_capacity(nnz);
+        for (row, row_vec) in H_csr.outer_iterator().enumerate() {
+            for (col, _) in row_vec.iter() {
+                edges.push(Edge {
+                    row,
+                    col,
+                    msg_vn_to_cn: 0.0,
+                    msg_cn_to_vn: 0.0,
+                });
+            }
         }
+
+        let mut cn_ranges = Vec::with_capacity(num_cns);
+        for j in 0..num_cns {
+            let start = H_csr.indptr().index(j);
+            let end = H_csr.indptr().index(j + 1);
+            cn_ranges.push(start..end);
+        }
+
+        let mut vn_indices = vec![Vec::new(); num_vns];
+        for (k, edge) in edges.iter().enumerate() {
+            vn_indices[edge.col].push(k);
+        }
+
+        Self(SyndromeBpCore {
+            edges,
+            cn_ranges,
+            vn_indices,
+            channel_llrs: channel_llrs.to_vec(),
+            total_llrs: vec![0.0; num_vns],
+            num_vns,
+            num_cns,
+        })
     }
 
     /// Perform variable node update [1].
     ///
     /// For each variable node `i`, the outgoing message to each connected check
     /// node is the sum of the channel LLR and all incoming CN messages, minus
-    /// the message from that specific check node. Messages are stored in CSC
-    /// order; see [2] for the index structure.
+    /// the message from that specific check node.
     ///
     /// # References
     ///
     /// [1] H. Yao et al., "Belief Propagation Decoding of Quantum LDPC Codes
     ///     with Guided Decimation," arXiv:2312.10950, 2024.
-    /// [2] https://stackoverflow.com/a/52299730
     fn vn_update(&mut self) {
-        for i in 0..self.0.H_csc.cols() {
-            let col_i_indices = self.0.H_csc.indptr().index(i)
-                ..self.0.H_csc.indptr().index(i + 1);
-
+        for i in 0..self.0.num_vns {
             let mut total = self.0.channel_llrs[i];
-            for idx in col_i_indices.clone() {
-                total += self.0.msg_cn_to_vn[idx];
+            let num_edges = self.0.vn_indices[i].len();
+            for ki in 0..num_edges {
+                let k = self.0.vn_indices[i][ki];
+                total += self.0.edges[k].msg_cn_to_vn;
             }
-
-            for idx in col_i_indices {
-                self.0.msg_vn_to_cn[idx] = total - self.0.msg_cn_to_vn[idx]
+            for ki in 0..num_edges {
+                let k = self.0.vn_indices[i][ki];
+                self.0.edges[k].msg_vn_to_cn =
+                    total - self.0.edges[k].msg_cn_to_vn;
             }
         }
     }
 
     fn cn_update(&mut self, syndrome: &[u8]) {
-        for j in 0..self.0.H_csr.rows() {
-            let start = self.0.H_csr.indptr().index(j);
-            let end = self.0.H_csr.indptr().index(j + 1);
-
+        for j in 0..self.0.num_cns {
+            let range = self.0.cn_ranges[j].clone();
             let syndrome_sign = 1.0 - 2.0 * syndrome[j] as f64;
             let mut total_sign = syndrome_sign;
             let mut min1 = f64::INFINITY;
             let mut min2 = f64::INFINITY;
-            let mut min1_idx = start;
+            let mut min1_idx = range.start;
 
             // First pass: accumulate sign, find two smallest magnitudes
-            for idx in start..end {
-                let msg = self.0.msg_vn_to_cn[self.0.csr_to_csc[idx]];
+            for k in range.clone() {
+                let msg = self.0.edges[k].msg_vn_to_cn;
                 total_sign *= msg.signum();
                 let abs_msg = msg.abs();
                 if abs_msg < min1 {
                     min2 = min1;
                     min1 = abs_msg;
-                    min1_idx = idx;
+                    min1_idx = k;
                 } else if abs_msg < min2 {
                     min2 = abs_msg;
                 }
             }
 
             // Second pass: assign outgoing messages
-            for idx in start..end {
-                let msg = self.0.msg_vn_to_cn[self.0.csr_to_csc[idx]];
+            for k in range {
+                let msg = self.0.edges[k].msg_vn_to_cn;
                 let sign_excl = total_sign * msg.signum(); // divide out this edge's sign
-                let mag_excl = if idx == min1_idx { min2 } else { min1 };
-                self.0.msg_cn_to_vn[self.0.csr_to_csc[idx]] =
-                    sign_excl * mag_excl;
+                let mag_excl = if k == min1_idx { min2 } else { min1 };
+                self.0.edges[k].msg_cn_to_vn = sign_excl * mag_excl;
             }
         }
     }
 
     fn total_llrs(&mut self) {
-        for i in 0..self.0.H_csc.cols() {
-            let col_i_indices = self.0.H_csc.indptr().index(i)
-                ..self.0.H_csc.indptr().index(i + 1);
-
+        for i in 0..self.0.num_vns {
             self.0.total_llrs[i] = self.0.channel_llrs[i];
-            for idx in col_i_indices {
-                self.0.total_llrs[i] += self.0.msg_cn_to_vn[idx];
+            let num_edges = self.0.vn_indices[i].len();
+            for ki in 0..num_edges {
+                let k = self.0.vn_indices[i][ki];
+                self.0.total_llrs[i] += self.0.edges[k].msg_cn_to_vn;
             }
         }
     }
 
-    fn get_state(&mut self) -> &mut super::SyndromeBpCore {
+    fn get_state(&mut self) -> &mut SyndromeBpCore {
         &mut self.0
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use sprs::{CsMat, TriMat};
+    use sprs::TriMat;
 
     use super::*;
-
-    #[test]
-    fn test_get_csc_to_csr() {
-        let mut m = TriMat::<u8>::new((3, 7));
-        m.add_triplet(0, 0, 1);
-        m.add_triplet(1, 1, 2);
-        m.add_triplet(2, 2, 3);
-        m.add_triplet(0, 3, 4);
-        m.add_triplet(2, 3, 5);
-        m.add_triplet(0, 4, 6);
-        m.add_triplet(1, 4, 7);
-        m.add_triplet(1, 5, 8);
-        m.add_triplet(2, 5, 9);
-        m.add_triplet(0, 6, 10);
-        m.add_triplet(1, 6, 11);
-        m.add_triplet(2, 6, 12);
-        let m_csc: CsMat<u8> = m.to_csc();
-        let m_csr: CsMat<u8> = m.to_csr();
-
-        let csr_to_csc = get_csc_to_csr(&m_csc);
-
-        for idx in 0..m_csc.nnz() {
-            assert_eq!(m_csr.data()[idx], m_csc.data()[csr_to_csc[idx]]);
-        }
-    }
 
     #[allow(non_snake_case)]
     fn get_hamming_H() -> CsMat<u8> {
@@ -203,51 +152,59 @@ mod tests {
     fn test_vn_update() {
         #[allow(non_snake_case)]
         let H = get_hamming_H();
-        let nnz = H.nnz();
 
-        let channel_llrs = Vec::<f64>::zeros(H.cols());
-        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs[..]);
-        decoder.0.msg_cn_to_vn = (0..nnz).map(|_| 1.0).collect::<Vec<f64>>();
+        let channel_llrs = vec![0.0; H.cols()];
+        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs);
+        for edge in &mut decoder.0.edges {
+            edge.msg_cn_to_vn = 1.0;
+        }
 
         decoder.vn_update();
 
-        let msg_vn_to_cn_expected =
-            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0];
-
-        assert_eq!(msg_vn_to_cn_expected, decoder.0.msg_vn_to_cn);
+        // Edges in CSR order: (0,0),(0,3),(0,4),(0,6),(1,1),(1,4),(1,5),(1,6),(2,2),(2,3),(2,5),(2,6)
+        // col degrees: 0→1, 1→1, 2→1, 3→2, 4→2, 5→2, 6→3
+        let expected =
+            vec![0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0];
+        let got: Vec<f64> =
+            decoder.0.edges.iter().map(|e| e.msg_vn_to_cn).collect();
+        assert_eq!(expected, got);
     }
 
     #[test]
     fn test_cn_update() {
         #[allow(non_snake_case)]
         let H = get_hamming_H();
-        let nnz = H.nnz();
 
-        let channel_llrs = Vec::<f64>::zeros(H.cols());
-        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs[..]);
-        decoder.0.msg_vn_to_cn = vec![1.0; nnz];
+        let channel_llrs = vec![0.0; H.cols()];
+        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs);
+        for edge in &mut decoder.0.edges {
+            edge.msg_vn_to_cn = 1.0;
+        }
 
         let s = vec![0, 1, 0];
         decoder.cn_update(&s);
 
-        // Magnitude = min(|vn_msgs|) = 1.0; sign follows
-        // (-1)^syndrome[check_node].
+        // Edges in CSR order: rows 0,0,0,0 then 1,1,1,1 then 2,2,2,2
+        // syndrome_sign: row 0 = +1, row 1 = -1, row 2 = +1
+        // Magnitude = min(|vn_msgs|) = 1.0; sign follows syndrome
         let expected = vec![
-            1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0, -1.0, 1.0, 1.0, -1.0, 1.0,
+            1.0, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0,
         ];
-
-        assert_eq!(expected, decoder.0.msg_cn_to_vn);
+        let got: Vec<f64> =
+            decoder.0.edges.iter().map(|e| e.msg_cn_to_vn).collect();
+        assert_eq!(expected, got);
     }
 
     #[test]
     fn test_total_llrs() {
         #[allow(non_snake_case)]
         let H = get_hamming_H();
-        let nnz = H.nnz();
 
         let channel_llrs = vec![1.0; H.cols()];
-        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs[..]);
-        decoder.0.msg_cn_to_vn = vec![1.0; nnz];
+        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs);
+        for edge in &mut decoder.0.edges {
+            edge.msg_cn_to_vn = 1.0;
+        }
 
         decoder.total_llrs();
 

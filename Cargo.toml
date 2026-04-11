@@ -3,27 +3,21 @@ name = "rust-qldpc"
 version = "0.1.0"
 edition = "2024"
 
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }                                                                                                                             
+
+[[bench]]                                                                                                                                                                                
+name = "decode"
+harness = false
+
 [lib]
 name = "rust_qldpc"
-crate-type = ["cdylib"]
-
-# [features]
-# python = ["dep:pyo3", "dep:numpy"]
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 numpy = "0.28.0"
-# pyo3 = "0.28.3"
 sprs = "0.11.4"
 
 [dependencies.pyo3]
 version = "0.28.3"
 features = ["abi3-py38"]
-
-# [dependencies.pyo3]
-# version = "0.22"
-# features = ["extension-module"]
-# optional = true
-
-# [dependencies.numpy]
-# version = "0.22"
-# optional = true
