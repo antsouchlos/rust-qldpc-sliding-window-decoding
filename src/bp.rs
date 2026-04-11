@@ -17,6 +17,7 @@ pub fn compute_syndrome(
     syndrome
 }
 
+#[derive(Clone)]
 pub struct Settings {
     pub max_iter: usize,
 }

@@ -87,7 +87,7 @@ def simulate_LER(
 
 seed = 1
 num_rounds = 2
-num_trials = 1000
+num_trials = 10000
 max_iter = 30
 
 # ps = [0.001, 0.002, 0.003, 0.004, 0.005]

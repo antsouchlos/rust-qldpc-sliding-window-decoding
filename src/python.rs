@@ -18,8 +18,8 @@ impl PySyndromeMinSumDecoder {
     #[new]
     #[allow(non_snake_case)]
     pub fn new(
-        H_csr_indptr: Vec<i32>,
-        H_csr_indices: Vec<i32>,
+        H_csr_indptr: Vec<usize>,
+        H_csr_indices: Vec<usize>,
         H_csr_data: Vec<u8>,
         H_shape: (usize, usize),
         channel_llrs: Vec<f64>,
@@ -41,12 +41,8 @@ impl PySyndromeMinSumDecoder {
             ));
         }
 
-        // TODO: Do the indptr and indices arrays have to be i32 arrays to begin with?
-        let indptr_u: Vec<usize> =
-            H_csr_indptr.iter().map(|&v| v as usize).collect();
-        let indices_u: Vec<usize> =
-            H_csr_indices.iter().map(|&v| v as usize).collect();
-        let h_csr = CsMat::new(H_shape, indptr_u, indices_u, H_csr_data);
+        let h_csr =
+            CsMat::new(H_shape, H_csr_indptr, H_csr_indices, H_csr_data);
 
         Ok(Self {
             decoder: SyndromeBpDecoder::new(
@@ -77,8 +73,8 @@ impl PySyndromeSpaDecoder {
     #[new]
     #[allow(non_snake_case)]
     pub fn new(
-        H_csr_indptr: Vec<i32>,
-        H_csr_indices: Vec<i32>,
+        H_csr_indptr: Vec<usize>,
+        H_csr_indices: Vec<usize>,
         H_csr_data: Vec<u8>,
         H_shape: (usize, usize),
         channel_llrs: Vec<f64>,
@@ -100,12 +96,8 @@ impl PySyndromeSpaDecoder {
             ));
         }
 
-        // TODO: Do the indptr and indices arrays have to be i32 arrays to begin with?
-        let indptr_u: Vec<usize> =
-            H_csr_indptr.iter().map(|&v| v as usize).collect();
-        let indices_u: Vec<usize> =
-            H_csr_indices.iter().map(|&v| v as usize).collect();
-        let h_csr = CsMat::new(H_shape, indptr_u, indices_u, H_csr_data);
+        let h_csr =
+            CsMat::new(H_shape, H_csr_indptr, H_csr_indices, H_csr_data);
 
         Ok(Self {
             decoder: SyndromeBpDecoder::new(
