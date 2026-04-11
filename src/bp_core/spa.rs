@@ -1,9 +1,60 @@
 use crate::bp_core::{Edge, SyndromeBpCore, SyndromeBpStrategy};
-use crate::phi_table::PhiTable;
 use sprs::CsMat;
 
+pub struct PhiTable {
+    table: Vec<f64>,
+    dx_inv: f64,
+    x_max: f64,
+}
+
+/// Lookup table for the function phi(x) = -ln(tanh(x/2))
+impl PhiTable {
+    pub fn new(n: usize, x_max: f64) -> Self {
+        let dx = x_max / (n - 1) as f64;
+
+        let table = (0..n)
+            .map(|i| {
+                let x = i as f64 * dx;
+                if x < 1e-10 {
+                    x_max
+                } else {
+                    -1.0 * (x / 2.0).tanh().ln()
+                }
+            })
+            .collect();
+
+        PhiTable {
+            table,
+            dx_inv: 1.0 / dx,
+            x_max,
+        }
+    }
+
+    /// Look up phi(x) using linear interpolation between table entries.
+    #[inline]
+    pub fn lookup(&self, x: f64) -> f64 {
+        if x >= self.x_max {
+            return 0.0;
+        }
+
+        let frac_idx = x * self.dx_inv;
+        let idx = frac_idx as usize;
+
+        let diff = frac_idx - idx as f64;
+        let i1 = (idx + 1).min(self.table.len() - 1);
+
+        self.table[idx] + diff * (self.table[i1] - self.table[idx])
+    }
+}
+
+impl Default for PhiTable {
+    fn default() -> Self {
+        Self::new(8192, 20.0)
+    }
+}
+
 pub struct SyndromeSpaCore {
-    pub state: SyndromeBpCore,
+    state: SyndromeBpCore,
     phi_table: PhiTable,
 }
 
@@ -55,43 +106,33 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
 
     /// Perform variable node update [1].
     ///
-    /// For each variable node `i`, the outgoing message to each connected check
-    /// node is the sum of the channel LLR and all incoming CN messages, minus
-    /// the message from that specific check node.
-    ///
-    /// # References
-    ///
     /// [1] H. Yao et al., "Belief Propagation Decoding of Quantum LDPC Codes
     ///     with Guided Decimation," arXiv:2312.10950, 2024.
     fn vn_update(&mut self) {
         for i in 0..self.state.num_vns {
+            let num_neighbors = self.state.vn_indices[i].len();
+
+            // Combine all incoming messages
+
             let mut total = self.state.channel_llrs[i];
-            let num_edges = self.state.vn_indices[i].len();
-            for ki in 0..num_edges {
-                let k = self.state.vn_indices[i][ki];
-                total += self.state.edges[k].msg_cn_to_vn;
+            for j in 0..num_neighbors {
+                let idx = self.state.vn_indices[i][j];
+                total += self.state.edges[idx].msg_cn_to_vn;
             }
-            for ki in 0..num_edges {
-                let k = self.state.vn_indices[i][ki];
-                self.state.edges[k].msg_vn_to_cn =
-                    total - self.state.edges[k].msg_cn_to_vn;
+
+            // Assign outgoing messages
+
+            for j in 0..num_neighbors {
+                let edge_idx = self.state.vn_indices[i][j];
+                self.state.edges[edge_idx].msg_vn_to_cn =
+                    total - self.state.edges[edge_idx].msg_cn_to_vn;
             }
         }
     }
 
-    /// Perform check node update using the log-domain sum-product algorithm [1].
-    ///
-    /// Uses the identity phi(x) = -ln(tanh(x/2)) (self-inverse) to replace
-    /// tanh/atanh with table lookups:
-    ///
-    ///   |L_{j→i}| = phi(∑_{k≠i} phi(|L_{k→j}|))
-    ///   sign(L_{j→i}) = syndrome_sign_j · ∏_{k≠i} sign(L_{k→j})
-    ///
-    /// Two passes per check node: accumulate phi-sum and sign in pass 1,
-    /// subtract each edge's contribution and look up the result in pass 2.
-    /// This is O(d) per check node with no transcendental function calls.
-    ///
-    /// # References
+    /// Perform check node update using the log-domain sum-product
+    /// algorithm [1]. Uses the self-inverse function phi(x) = -ln(tanh(x/2))
+    /// to replace tanh/atanh with table lookups.
     ///
     /// [1] H. Yao et al., "Belief Propagation Decoding of Quantum LDPC Codes
     ///     with Guided Decimation," arXiv:2312.10950, 2024.
@@ -103,20 +144,26 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
             let mut total_phi = 0.0;
             let mut total_sign = syndrome_sign;
 
-            for k in range.clone() {
-                let msg = self.state.edges[k].msg_vn_to_cn;
-                let phi_k = self.phi_table.lookup(msg.abs());
-                total_phi += phi_k;
-                total_sign *= msg.signum();
+            // Combine all incoming messages
+
+            for i_idx in range.clone() {
+                let msg_i_to_j = self.state.edges[i_idx].msg_vn_to_cn;
+                total_sign *= msg_i_to_j.signum();
+
+                let phi = self.phi_table.lookup(msg_i_to_j.abs());
+                total_phi += phi;
             }
 
-            for k in range {
-                let msg = self.state.edges[k].msg_vn_to_cn;
-                let phi_k = self.phi_table.lookup(msg.abs());
-                let excl_phi = total_phi - phi_k;
-                let excl_sign = total_sign * msg.signum();
-                let out = excl_sign * self.phi_table.lookup(excl_phi);
-                self.state.edges[k].msg_cn_to_vn = out;
+            // Assign outgoing messages
+
+            for edge_idx in range {
+                let msg = self.state.edges[edge_idx].msg_vn_to_cn;
+                let phi = self.phi_table.lookup(msg.abs());
+                let extrinsic_phi = total_phi - phi;
+                let extrinsic_sign = total_sign * msg.signum();
+
+                let out = extrinsic_sign * self.phi_table.lookup(extrinsic_phi);
+                self.state.edges[edge_idx].msg_cn_to_vn = out;
             }
         }
     }
@@ -124,10 +171,12 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
     fn total_llrs(&mut self) {
         for i in 0..self.state.num_vns {
             self.state.total_llrs[i] = self.state.channel_llrs[i];
-            let num_edges = self.state.vn_indices[i].len();
-            for ki in 0..num_edges {
-                let k = self.state.vn_indices[i][ki];
-                self.state.total_llrs[i] += self.state.edges[k].msg_cn_to_vn;
+
+            let num_neighbors = self.state.vn_indices[i].len();
+            for j in 0..num_neighbors {
+                let edge_idx = self.state.vn_indices[i][j];
+                self.state.total_llrs[i] +=
+                    self.state.edges[edge_idx].msg_cn_to_vn;
             }
         }
     }
@@ -142,6 +191,51 @@ mod tests {
     use sprs::TriMat;
 
     use super::*;
+
+    #[test]
+    fn test_phi_self_inverse() {
+        let table = PhiTable::default();
+        // Tolerance is looser for large x because phi(x) is tiny (≈ 2e^{-x}) and
+        // falls in the steep near-zero region of the table where phi'' is large.
+        for &(x, tol) in &[
+            (0.5f64, 1e-4),
+            (1.0, 1e-4),
+            (2.0, 1e-3),
+            (3.0, 1e-2),
+            (5.0, 5e-2),
+        ] {
+            let y = table.lookup(x);
+            let z = table.lookup(y);
+
+            assert!(
+                (z - x).abs() < tol,
+                "phi(phi({x})) = {z}, expected {x} (tol {tol})"
+            );
+        }
+    }
+
+    #[test]
+    fn test_phi_accuracy() {
+        let table = PhiTable::default();
+
+        for &x in &[0.5f64, 1.0, 2.0, 5.0] {
+            let exact = -(x / 2.0).tanh().ln();
+            let approx = table.lookup(x);
+
+            assert!(
+                (approx - exact).abs() < 1e-5,
+                "phi({x}): got {approx}, exact {exact}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_phi_boundary() {
+        let table = PhiTable::default();
+
+        assert_eq!(table.lookup(20.0), 0.0);
+        assert_eq!(table.lookup(100.0), 0.0);
+    }
 
     #[allow(non_snake_case)]
     fn get_hamming_H() -> CsMat<u8> {
@@ -177,9 +271,14 @@ mod tests {
 
         decoder.vn_update();
 
-        // Edges are in CSR order: (0,0),(0,3),(0,4),(0,6),(1,1),(1,4),(1,5),(1,6),(2,2),(2,3),(2,5),(2,6)
-        // col degrees: 0→1, 1→1, 2→1, 3→2, 4→2, 5→2, 6→3
-        // msg = (channel_llr + sum_incoming) - this_incoming = degree(col)-1
+        //     1 0 0 1 1 0 1
+        // H = 0 1 0 0 1 1 1
+        //     0 0 1 1 0 1 1
+        //
+        //            1 0 0 1 1 0 1
+        // L_{i<-j} = 0 1 0 0 1 1 1
+        //            0 0 1 1 0 1 1
+
         let expected =
             vec![0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0];
         let got: Vec<f64> =
@@ -201,14 +300,21 @@ mod tests {
         let s = vec![0, 1, 0];
         decoder.cn_update(&s);
 
-        // Edges in CSR order: rows 0,0,0,0 then 1,1,1,1 then 2,2,2,2
-        // syndrome_sign: row 0 = +1, row 1 = -1, row 2 = +1
-        // Magnitude = 2*arctanh(tanh(0.5)^3) (product of 3 tanh values, 4 edges per row)
+        //     1 0 0 1 1 0 1
+        // H = 0 1 0 0 1 1 1
+        //     0 0 1 1 0 1 1
+        //
+        //            1 0 0 1 1 0 1
+        // L_{i->j} = 0 1 0 0 1 1 1
+        //            0 0 1 1 0 1 1
+
+        // The negative signs are due to the syndrome
         let v = 2.0 * f64::tanh(0.5).powi(3).atanh();
         let expected = vec![v, v, v, v, -v, -v, -v, -v, v, v, v, v];
 
         let got: Vec<f64> =
             decoder.state.edges.iter().map(|e| e.msg_cn_to_vn).collect();
+
         assert_eq!(expected.len(), got.len());
         for (a, b) in expected.iter().zip(got.iter()) {
             assert!((a - b).abs() < 1e-5, "expected {a}, got {b}");
@@ -228,8 +334,14 @@ mod tests {
 
         decoder.total_llrs();
 
-        // total_llrs[i] = channel_llrs[i] + degree(col i)
-        // degrees: cols 0-2 have degree 1, cols 3-5 degree 2, col 6 degree 3
+        //     1 0 0 1 1 0 1
+        // H = 0 1 0 0 1 1 1
+        //     0 0 1 1 0 1 1
+        //
+        //            1 0 0 1 1 0 1
+        // L_{i<-j} = 0 1 0 0 1 1 1, L_ch = 1 1 1 1 1 1 1
+        //            0 0 1 1 0 1 1
+
         let expected = vec![2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0];
         assert_eq!(expected, decoder.state.total_llrs);
     }

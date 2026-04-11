@@ -1,10 +1,19 @@
-use crate::{Decoder, bp_core::{Edge, SyndromeBpStrategy}};
+use crate::{
+    Decoder,
+    bp_core::{Edge, SyndromeBpStrategy},
+};
 
-pub fn compute_syndrome(edges: &[Edge], num_cns: usize, e_hat: &[u8]) -> Vec<u8> {
+pub fn compute_syndrome(
+    edges: &[Edge],
+    num_cns: usize,
+    e_hat: &[u8],
+) -> Vec<u8> {
     let mut syndrome = vec![0u8; num_cns];
+
     for edge in edges {
         syndrome[edge.row] ^= e_hat[edge.col];
     }
+
     syndrome
 }
 
@@ -31,7 +40,6 @@ impl<Core: SyndromeBpStrategy> SyndromeBpDecoder<Core> {
     }
 }
 
-// TODO: Doc comments
 impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpDecoder<Core> {
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
         let mut e_hat: Vec<u8> = self
@@ -102,7 +110,12 @@ mod tests {
         let mut edges = Vec::new();
         for (row, row_vec) in H.outer_iterator().enumerate() {
             for (col, _) in row_vec.iter() {
-                edges.push(Edge { row, col, msg_vn_to_cn: 0.0, msg_cn_to_vn: 0.0 });
+                edges.push(Edge {
+                    row,
+                    col,
+                    msg_vn_to_cn: 0.0,
+                    msg_cn_to_vn: 0.0,
+                });
             }
         }
 
