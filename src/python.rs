@@ -4,9 +4,9 @@ use pyo3::prelude::*;
 use rayon::prelude::*;
 use sprs::CsMat;
 
-use crate::Decoder;
-use crate::bp::{Settings, SyndromeBpDecoder};
-use crate::bp_core::{
+use crate::decoders::Decoder;
+use crate::decoders::bp::{Settings, SyndromeBpDecoder};
+use crate::decoders::core::{
     SyndromeBpStrategy, min_sum::SyndromeMinSumCore, spa::SyndromeSpaCore,
 };
 

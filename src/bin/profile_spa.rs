@@ -1,6 +1,6 @@
-use rust_qldpc::Decoder;
-use rust_qldpc::bp::{Settings, SyndromeBpDecoder};
-use rust_qldpc::bp_core::spa::SyndromeSpaCore;
+use rust_qldpc::decoders::Decoder;
+use rust_qldpc::decoders::bp::{Settings, SyndromeBpDecoder};
+use rust_qldpc::decoders::core::spa::SyndromeSpaCore;
 use sprs::TriMat;
 
 fn make_ldpc(n: usize) -> sprs::CsMat<u8> {

@@ -1,4 +1,4 @@
-use crate::bp_core::{Edge, SyndromeBpCore, SyndromeBpStrategy};
+use crate::decoders::core::{Edge, SyndromeBpCore, SyndromeBpStrategy};
 use sprs::CsMat;
 
 #[derive(Clone)]

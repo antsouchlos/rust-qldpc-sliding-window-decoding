@@ -1,6 +1,6 @@
-use crate::{
+use crate::decoders::{
     Decoder,
-    bp_core::{Edge, SyndromeBpStrategy},
+    core::{Edge, SyndromeBpStrategy},
 };
 
 pub fn compute_syndrome(
