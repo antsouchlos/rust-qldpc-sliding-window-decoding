@@ -5,6 +5,8 @@ use std::ops::Range;
 
 use sprs::CsMat;
 
+use crate::decoders::Decoder;
+
 #[derive(Clone)]
 pub struct Edge {
     pub row: usize,
@@ -34,4 +36,15 @@ pub trait SyndromeBpStrategy {
 
     fn get_state(&mut self) -> &mut SyndromeBpCore;
     fn get_state_ref(&self) -> &SyndromeBpCore;
+}
+
+pub trait SyndromeBpDecoder: Decoder {
+    #[allow(non_snake_case)]
+    fn new(
+        settings: <Self as Decoder>::Settings,
+        H: &CsMat<u8>,
+        channel_llrs: &[f64],
+    ) -> Self;
+
+    fn reset(&mut self);
 }

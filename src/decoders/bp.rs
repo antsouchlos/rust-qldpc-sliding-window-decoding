@@ -1,6 +1,6 @@
 use crate::decoders::{
     Decoder,
-    core::{Edge, SyndromeBpStrategy},
+    core::{Edge, SyndromeBpDecoder, SyndromeBpStrategy},
 };
 
 pub fn compute_syndrome(
@@ -23,26 +23,14 @@ pub struct Settings {
 }
 
 #[derive(Clone)]
-pub struct SyndromeBpDecoder<Core: SyndromeBpStrategy> {
+pub struct SimpleSyndromeBpDecoder<Core: SyndromeBpStrategy> {
     pub settings: Settings,
     pub core: Core,
 }
 
-impl<Core: SyndromeBpStrategy> SyndromeBpDecoder<Core> {
-    #[allow(non_snake_case)]
-    pub fn new(
-        settings: Settings,
-        H: &sprs::CsMat<u8>,
-        channel_llrs: &[f64],
-    ) -> Self {
-        Self {
-            settings,
-            core: Core::new(H, channel_llrs),
-        }
-    }
-}
+impl<Core: SyndromeBpStrategy> Decoder for SimpleSyndromeBpDecoder<Core> {
+    type Settings = Settings;
 
-impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpDecoder<Core> {
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
         let mut e_hat: Vec<u8> = self
             .core
@@ -73,6 +61,22 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpDecoder<Core> {
         }
 
         e_hat
+    }
+}
+
+impl<Core: SyndromeBpStrategy> SyndromeBpDecoder
+    for SimpleSyndromeBpDecoder<Core>
+{
+    #[allow(non_snake_case)]
+    fn new(
+        settings: <Self as Decoder>::Settings,
+        H: &sprs::CsMat<u8>,
+        channel_llrs: &[f64],
+    ) -> Self {
+        Self {
+            settings: settings,
+            core: Core::new(H, channel_llrs),
+        }
     }
 
     fn reset(&mut self) {

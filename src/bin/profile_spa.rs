@@ -1,5 +1,6 @@
 use rust_qldpc::decoders::Decoder;
-use rust_qldpc::decoders::bp::{Settings, SyndromeBpDecoder};
+use rust_qldpc::decoders::bp::{Settings, SimpleSyndromeBpDecoder};
+use rust_qldpc::decoders::core::SyndromeBpDecoder;
 use rust_qldpc::decoders::core::spa::SyndromeSpaCore;
 use sprs::TriMat;
 
@@ -33,7 +34,7 @@ fn main() {
     let settings = Settings { max_iter: 100 };
 
     for _ in 0..1000 {
-        let mut decoder = SyndromeBpDecoder::<SyndromeSpaCore>::new(
+        let mut decoder = SimpleSyndromeBpDecoder::<SyndromeSpaCore>::new(
             settings.clone(),
             &h,
             &channel_llrs,
