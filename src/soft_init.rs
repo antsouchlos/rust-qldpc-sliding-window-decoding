@@ -234,6 +234,19 @@ fn split_pcm(
     result
 }
 
+fn split_priors(
+    priors: &[f64],
+    window_borders: &Vec<((usize, usize), (usize, usize))>,
+) -> Vec<Vec<f64>> {
+    let mut result = Vec::<Vec<f64>>::with_capacity(window_borders.len());
+
+    for &((_, col_begin), (_, col_end)) in window_borders {
+        result.push(priors[col_begin..col_end + 1].to_vec());
+    }
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use pyo3::{
@@ -433,7 +446,6 @@ mod tests {
         assert_eq!(H_win2, expected_win2);
     }
 
-    // TODO: Test priors
     #[test]
     fn test_split_pcm_vs_quits() {
         unsafe {
@@ -443,7 +455,11 @@ mod tests {
         #[allow(non_snake_case)]
         let mut win_Hs = Vec::<Vec<Vec<u8>>>::new();
         #[allow(non_snake_case)]
+        let mut win_priors = Vec::<Vec<f64>>::new();
+        #[allow(non_snake_case)]
         let mut circuit_H = Vec::<Vec<u8>>::new();
+        #[allow(non_snake_case)]
+        let mut circuit_priors = Vec::<f64>::new();
 
         let mut m: usize = 0;
         let mut num_rounds: usize = 0;
@@ -513,8 +529,22 @@ circuit_H_dense = circuit_H.toarray().astype('uint8').tolist()
                    .extract()
                    .unwrap();
 
+                win_priors = locals
+                   .get_item("win_priors")
+                   .unwrap()
+                   .unwrap()
+                   .extract()
+                   .unwrap();
+
                 circuit_H = locals
                    .get_item("circuit_H_dense")
+                   .unwrap()
+                   .unwrap()
+                   .extract()
+                   .unwrap();
+
+                circuit_priors = locals
+                   .get_item("circuit_priors")
                    .unwrap()
                    .unwrap()
                    .extract()
@@ -547,7 +577,6 @@ circuit_H_dense = circuit_H.toarray().astype('uint8').tolist()
                    .unwrap()
                    .extract()
                    .unwrap();
-                
             })
             .expect("Python interpreter not initialized");
 
@@ -569,11 +598,14 @@ circuit_H_dense = circuit_H.toarray().astype('uint8').tolist()
                 .collect::<Vec<&[u8]>>(),
         );
 
-        let window_borders = get_window_borders(&circuit_H, m, num_rounds, W, F);
+        let window_borders =
+            get_window_borders(&circuit_H, m, num_rounds, W, F);
         #[allow(non_snake_case)]
         let split_Hs = split_pcm(&circuit_H, &window_borders);
+        let split_priors = split_priors(&circuit_priors, &window_borders);
 
         assert_eq!(win_Hs, split_Hs);
+        assert_eq!(win_priors, split_priors);
     }
 }
 
