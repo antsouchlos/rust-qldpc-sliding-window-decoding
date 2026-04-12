@@ -160,7 +160,6 @@ where
     }
 }
 
-// TODO: Implement
 // TODO: Pass soft info
 impl<InnerDecoder> Decoder for WindowingSyndromeBpDecoder<InnerDecoder>
 where
@@ -168,10 +167,9 @@ where
 {
     type Settings = Settings;
 
-    // TODO: Clean up the syndrome update and commit logic
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
         let mut e_hat_total = Vec::<u8>::new();
-        let mut s_diff = Vec::<u8>::zeros(self.window_borders[0].1.0);
+        let mut s_diff = Vec::<u8>::zeros(self.window_borders[0].1.0 + 1);
 
         for win_idx in 0..self.window_decoders.len() {
             let mut s_win = self.cut_out_current_window_syndrome(&s, win_idx);
@@ -244,15 +242,10 @@ impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
 
 #[cfg(test)]
 mod tests {
-
-    use std::ascii::escape_default;
-
-    use rayon::vec;
-    use sprs::TriMat;
+    use super::*;
 
     use crate::decoders::{bp, core::min_sum::SyndromeMinSumCore};
-
-    use super::*;
+    use sprs::TriMat;
 
     #[allow(non_snake_case)]
     fn get_hamming_H() -> sprs::CsMat<u8> {
