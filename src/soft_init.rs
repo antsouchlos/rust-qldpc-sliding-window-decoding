@@ -9,6 +9,7 @@ use crate::windowing::{get_overlap_info, get_window_borders};
 #[derive(Clone)]
 #[allow(non_snake_case)]
 pub struct Settings {
+    pub pass_soft_info: bool,
     pub F: usize,
     pub W: usize,
 }
@@ -158,9 +159,27 @@ where
 
         s[row_begin..=row_end].to_vec()
     }
+
+    fn get_soft_info_from_previous_window(&mut self, win_idx: usize) {
+        assert!(win_idx >= 1);
+
+        let prev_win_overlap_start =
+            self.overlap_info.begin_positions[win_idx - 1];
+        let curr_win_overlap_end = self.overlap_info.end_positions[win_idx - 1];
+
+        let prev_soft_info = self.window_decoders[win_idx - 1]
+            .get_cn_to_vn_tail(
+                prev_win_overlap_start.0,
+                prev_win_overlap_start.1,
+            );
+        self.window_decoders[win_idx].set_cn_to_vn_head(
+            &prev_soft_info,
+            curr_win_overlap_end.0 + 1,
+            curr_win_overlap_end.1 + 1,
+        );
+    }
 }
 
-// TODO: Pass soft info
 impl<InnerDecoder> Decoder for WindowingSyndromeBpDecoder<InnerDecoder>
 where
     InnerDecoder: SoftInitBpDecoder,
@@ -175,9 +194,13 @@ where
             let mut s_win = self.cut_out_current_window_syndrome(&s, win_idx);
             vec_add_inplace(&mut s_win, &s_diff);
 
-            let e_hat = self.window_decoders[win_idx].decode(&s_win);
-            e_hat_total.extend(self.get_commited_e_hat(&e_hat, win_idx).iter());
+            if self.settings.pass_soft_info && win_idx >= 1 {
+                self.get_soft_info_from_previous_window(win_idx);
+            }
 
+            let e_hat = self.window_decoders[win_idx].decode(&s_win);
+
+            e_hat_total.extend(self.get_commited_e_hat(&e_hat, win_idx).iter());
             s_diff = self.get_next_window_syndrome_diff(&e_hat, win_idx);
         }
 
@@ -351,7 +374,11 @@ mod tests {
         let decoder = WindowingSyndromeBpDecoder::<
             SimpleSyndromeBpDecoder<SyndromeMinSumCore>,
         >::new(
-            Settings { F: 2, W: 3 },
+            Settings {
+                pass_soft_info: false,
+                F: 2,
+                W: 3,
+            },
             bp::Settings { max_iter: 32 },
             &H,
             2,
@@ -402,6 +429,82 @@ mod tests {
         let e_hat = vec![1, 0, 0, 1, 0, 0, 0, 0];
         let got = decoder.get_next_window_syndrome_diff(&e_hat, 1);
         let expected = Vec::<u8>::new();
+        assert_eq!(expected, got);
+    }
+
+    #[test]
+    fn test_soft_info_passing() {
+        #[allow(non_snake_case)]
+        let H = csr_from_dense(&[
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+        ]);
+
+        let channel_llrs = Vec::<f64>::zeros(H.cols());
+
+        let mut decoder = WindowingSyndromeBpDecoder::<
+            SimpleSyndromeBpDecoder<SyndromeMinSumCore>,
+        >::new(
+            Settings {
+                pass_soft_info: false,
+                F: 2,
+                W: 3,
+            },
+            bp::Settings { max_iter: 32 },
+            &H,
+            2,
+            4 - 2,
+            &channel_llrs,
+        );
+
+        // 1 2 0 0    0  0  | 0 0
+        // 3 4 0 0    0  0  | 0 0
+        // 0 5 6 7    0  0  | 0 0
+        // 0 8 9 10   0  0  | 0 0
+        //          ...........
+        // 0 0 0 11 . 12 13 | 0 0
+        // 0 0 0 14 . 15 16 | 0 0
+        // -------- . ---------
+        // 0 0 0 0  . 0  1  | 1 1
+        // 0 0 0 0  . 0  1  | 1 1
+
+        for (idx, e) in &mut decoder.window_decoders[0]
+            .core
+            .0
+            .edges
+            .iter_mut()
+            .enumerate()
+        {
+            e.msg_cn_to_vn = (idx + 1) as f64;
+        }
+
+        for (idx, e) in &mut decoder.window_decoders[1]
+            .core
+            .0
+            .edges
+            .iter_mut()
+            .enumerate()
+        {
+            e.msg_cn_to_vn = (idx + 1) as f64;
+        }
+
+        decoder.get_soft_info_from_previous_window(1);
+
+        let expected =
+            vec![12.0, 13.0, 15.0, 16.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+        let got: Vec<f64> = decoder.window_decoders[1]
+            .core
+            .0
+            .edges
+            .iter()
+            .map(|e| e.msg_cn_to_vn)
+            .collect();
         assert_eq!(expected, got);
     }
 

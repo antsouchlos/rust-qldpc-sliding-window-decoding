@@ -198,6 +198,7 @@ impl PyWindowingSyndromeSpaDecoder {
         channel_llrs: Vec<f64>,
         W: usize,
         F: usize,
+        pass_soft_info: bool,
         max_iter: usize,
     ) -> PyResult<Self> {
         if H_csr_indptr.len() != H_shape.0 + 1 {
@@ -221,7 +222,11 @@ impl PyWindowingSyndromeSpaDecoder {
 
         Ok(Self {
             decoder: WindowingSyndromeBpDecoder::new(
-                soft_init::Settings { W, F },
+                soft_init::Settings {
+                    pass_soft_info,
+                    W,
+                    F,
+                },
                 bp::Settings { max_iter: max_iter },
                 &h_csr,
                 m,
@@ -287,6 +292,7 @@ impl PyWindowingSyndromeMinSumDecoder {
         channel_llrs: Vec<f64>,
         W: usize,
         F: usize,
+        pass_soft_info: bool,
         max_iter: usize,
     ) -> PyResult<Self> {
         if H_csr_indptr.len() != H_shape.0 + 1 {
@@ -310,7 +316,11 @@ impl PyWindowingSyndromeMinSumDecoder {
 
         Ok(Self {
             decoder: WindowingSyndromeBpDecoder::new(
-                soft_init::Settings { W, F },
+                soft_init::Settings {
+                    pass_soft_info,
+                    W,
+                    F,
+                },
                 bp::Settings { max_iter: max_iter },
                 &h_csr,
                 m,
