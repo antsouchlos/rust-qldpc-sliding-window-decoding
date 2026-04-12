@@ -74,6 +74,13 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpDecoder<Core> {
 
         e_hat
     }
+
+    fn reset(&mut self) {
+        for edge in &mut self.core.get_state().edges {
+            edge.msg_vn_to_cn = 0.0;
+            edge.msg_cn_to_vn = 0.0;
+        }
+    }
 }
 
 #[cfg(test)]
