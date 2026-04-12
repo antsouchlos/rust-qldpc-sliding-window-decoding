@@ -9,7 +9,6 @@ use crate::windowing::{get_overlap_info, get_window_borders};
 #[derive(Clone)]
 #[allow(non_snake_case)]
 pub struct Settings {
-    pub max_iter: usize,
     pub F: usize,
     pub W: usize,
 }
@@ -88,25 +87,76 @@ where
     }
 }
 
-fn mat_mul_vec(a: &CsMat<u8>, v: &[u8]) -> Vec<u8> {
-    assert_eq!(a.shape().1, v.len());
-
-    let mut result = vec![0u8; a.rows()];
-    for (row_idx, row_vec) in a.outer_iterator().enumerate() {
-        for (col_idx, &val) in row_vec.iter() {
-            if val != 0 {
-                result[row_idx] ^= v[col_idx];
-            }
-        }
-    }
-    result
-}
-
 fn vec_add_inplace(a: &mut [u8], b: &[u8]) {
     assert_eq!(a.len(), b.len());
 
     for (x, &y) in a.iter_mut().zip(b.iter()) {
         *x ^= y;
+    }
+}
+
+impl<InnerDdecoder> WindowingSyndromeBpDecoder<InnerDdecoder>
+where
+    InnerDdecoder: SoftInitBpDecoder,
+{
+    // TODO: Clean this up
+    #[allow(non_snake_case)]
+    fn get_next_window_syndrome_diff(
+        &self,
+        e_hat: &[u8],
+        win_idx: usize,
+    ) -> Vec<u8> {
+        if win_idx + 1 >= self.window_decoders.len() {
+            return vec![];
+        }
+
+        let n_committed_cols = self.overlap_info.begin_positions[win_idx].1;
+        let overlap_row_start = self.overlap_info.begin_positions[win_idx].0;
+        let n_overlap_rows = self.overlap_info.end_positions[win_idx].0 + 1;
+
+        let next_win = &self.window_borders[win_idx + 1];
+        let n_rows_next = next_win.1.0 - next_win.0.0 + 1;
+
+        let mut s_diff = vec![0u8; n_rows_next];
+
+        let win_H = &self.win_Hs[win_idx];
+        for local_row in overlap_row_start..overlap_row_start + n_overlap_rows {
+            let row_vec = win_H.outer_view(local_row).unwrap();
+            let mut val = 0u8;
+            for (col, &h) in row_vec.iter() {
+                if col < n_committed_cols && h != 0 {
+                    val ^= e_hat[col];
+                }
+            }
+            s_diff[local_row - overlap_row_start] = val;
+        }
+
+        s_diff
+    }
+
+    fn get_commited_e_hat<'a>(
+        &self,
+        e_hat: &'a [u8],
+        win_idx: usize,
+    ) -> &'a [u8] {
+        let end_idx = if win_idx < self.window_decoders.len() - 1 {
+            self.overlap_info.begin_positions[win_idx].1
+        } else {
+            e_hat.len()
+        };
+
+        &e_hat[0..end_idx]
+    }
+
+    fn cut_out_current_window_syndrome(
+        &self,
+        s: &[u8],
+        win_idx: usize,
+    ) -> Vec<u8> {
+        let (row_begin, _) = self.window_borders[win_idx].0;
+        let (row_end, _) = self.window_borders[win_idx].1;
+
+        s[row_begin..=row_end].to_vec()
     }
 }
 
@@ -124,35 +174,19 @@ where
         let mut s_diff = Vec::<u8>::zeros(self.window_borders[0].1.0);
 
         for win_idx in 0..self.window_decoders.len() {
-            // Compute inner decoder syndrome input
-
-            let abs_win_row_beg = self.window_borders[win_idx].0.0;
-            let abs_win_row_end = self.window_borders[win_idx].0.1;
-
-            let mut s_win = s[abs_win_row_beg..abs_win_row_end].to_vec();
+            let mut s_win = self.cut_out_current_window_syndrome(&s, win_idx);
             vec_add_inplace(&mut s_win, &s_diff);
 
-            // Decode
-
             let e_hat = self.window_decoders[win_idx].decode(&s_win);
+            e_hat_total.extend(self.get_commited_e_hat(&e_hat, win_idx).iter());
 
-            // Commit relevant columns of error restimate
-
-            let next_overlap_beg = self.overlap_info.begin_positions[win_idx];
-            e_hat_total.extend(e_hat[0..next_overlap_beg.1].iter());
-
-            // Compute syndrome update for next window
-
-            s_diff = mat_mul_vec(&self.win_Hs[win_idx], &e_hat)
-                [next_overlap_beg.0..]
-                .to_vec();
+            s_diff = self.get_next_window_syndrome_diff(&e_hat, win_idx);
         }
 
         e_hat_total
     }
 }
 
-// TODO: Write unit tests
 // TODO: Implement this for BPGD as well
 impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
     for SimpleSyndromeBpDecoder<Core>
@@ -211,6 +245,9 @@ impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
 #[cfg(test)]
 mod tests {
 
+    use std::ascii::escape_default;
+
+    use rayon::vec;
     use sprs::TriMat;
 
     use crate::decoders::{bp, core::min_sum::SyndromeMinSumCore};
@@ -300,6 +337,79 @@ mod tests {
         assert_eq!(expected1, got1);
         assert_eq!(expected2, got2);
         assert_eq!(expected3, got3);
+    }
+
+    #[test]
+    fn test_window_result_manipulation() {
+        #[allow(non_snake_case)]
+        let H = csr_from_dense(&[
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+        ]);
+
+        let channel_llrs = Vec::<f64>::zeros(H.cols());
+
+        let decoder = WindowingSyndromeBpDecoder::<
+            SimpleSyndromeBpDecoder<SyndromeMinSumCore>,
+        >::new(
+            Settings { F: 2, W: 3 },
+            bp::Settings { max_iter: 32 },
+            &H,
+            2,
+            4 - 2,
+            &channel_llrs,
+        );
+
+        // 1 1 0 0   0 0 | 0 0
+        // 1 1 0 0   0 0 | 0 0
+        // 0 1 1 1   0 0 | 0 0
+        // 0 1 1 1   0 0 | 0 0
+        //         ...........
+        // 0 0 0 1 . 1 1 | 0 0
+        // 0 0 0 1 . 1 1 | 0 0
+        // --------. ---------
+        // 0 0 0 0 . 0 1 | 1 1
+        // 0 0 0 0 . 0 1 | 1 1
+
+        let s: Vec<u8> = (0..H.rows()).map(|v| v as u8).collect();
+
+        // Window 1
+
+        let e_hat: Vec<u8> = (0..6).map(|v| v as u8).collect();
+        let got = decoder.get_commited_e_hat(&e_hat, 0);
+        let expected = vec![0, 1, 2, 3];
+        assert_eq!(expected, got);
+
+        let got = decoder.cut_out_current_window_syndrome(&s, 0);
+        let expected = vec![0, 1, 2, 3, 4, 5];
+        assert_eq!(expected, got);
+
+        let e_hat = vec![1, 0, 0, 1, 0, 0, 0, 0];
+        let got = decoder.get_next_window_syndrome_diff(&e_hat, 0);
+        let expected = vec![1, 1, 0, 0];
+        assert_eq!(expected, got);
+
+        // Window 1
+
+        let e_hat: Vec<u8> = (0..4).map(|v| v as u8).collect();
+        let got = decoder.get_commited_e_hat(&e_hat, 1);
+        let expected = vec![0, 1, 2, 3];
+        assert_eq!(expected, got);
+
+        let got = decoder.cut_out_current_window_syndrome(&s, 1);
+        let expected = vec![4, 5, 6, 7];
+        assert_eq!(expected, got);
+
+        let e_hat = vec![1, 0, 0, 1, 0, 0, 0, 0];
+        let got = decoder.get_next_window_syndrome_diff(&e_hat, 1);
+        let expected = Vec::<u8>::new();
+        assert_eq!(expected, got);
     }
 
     #[test]

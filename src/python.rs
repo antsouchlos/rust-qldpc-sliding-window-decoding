@@ -221,11 +221,7 @@ impl PyWindowingSyndromeSpaDecoder {
 
         Ok(Self {
             decoder: WindowingSyndromeBpDecoder::new(
-                soft_init::Settings {
-                    max_iter: max_iter,
-                    W,
-                    F,
-                },
+                soft_init::Settings { W, F },
                 bp::Settings { max_iter: max_iter },
                 &h_csr,
                 m,
@@ -314,11 +310,7 @@ impl PyWindowingSyndromeMinSumDecoder {
 
         Ok(Self {
             decoder: WindowingSyndromeBpDecoder::new(
-                soft_init::Settings {
-                    max_iter: max_iter,
-                    W,
-                    F,
-                },
+                soft_init::Settings { W, F },
                 bp::Settings { max_iter: max_iter },
                 &h_csr,
                 m,
