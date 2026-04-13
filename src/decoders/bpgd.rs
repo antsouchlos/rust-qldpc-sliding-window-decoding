@@ -33,7 +33,7 @@ pub struct SyndromeBpGdDecoder<Core: SyndromeBpStrategy> {
 }
 
 // TODO: Doc comments
-// TODO: This implementation of BPGD is not compatible with the min-sum core
+// TODO: This implementation of BPGD is only compatible with the naive SPA core
 impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpGdDecoder<Core> {
     type Settings = Settings;
 
