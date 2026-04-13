@@ -47,10 +47,12 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpGdDecoder<Core> {
             .map(|&v| if v < 0.0 { 1 } else { 0 })
             .collect();
 
-        let mut iter_idx = 0;
-        while (iter_idx < self.settings.max_iter)
-            && (iter_idx < self.core.get_state().num_vns)
-        {
+        let mut num_iter = 0;
+        for _ in 0..self.core.get_state().num_vns {
+            if num_iter > self.settings.max_iter {
+                break;
+            }
+
             for _ in 0..self.settings.T {
                 self.core.vn_update();
                 self.core.cn_update(s);
@@ -90,7 +92,7 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpGdDecoder<Core> {
             self.core.get_state().channel_llrs[max_llr_index] =
                 sign * f64::INFINITY;
 
-            iter_idx += self.settings.T;
+            num_iter += self.settings.T;
         }
 
         e_hat
