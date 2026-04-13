@@ -97,9 +97,7 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpGdDecoder<Core> {
     }
 }
 
-impl<Core: SyndromeBpStrategy> SyndromeBpDecoder
-    for SyndromeBpGdDecoder<Core>
-{
+impl<Core: SyndromeBpStrategy> SyndromeBpDecoder for SyndromeBpGdDecoder<Core> {
     #[allow(non_snake_case)]
     fn new(
         settings: <Self as Decoder>::Settings,

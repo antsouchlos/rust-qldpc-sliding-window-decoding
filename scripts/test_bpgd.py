@@ -2,9 +2,9 @@ import numba as nb
 import numpy as np
 from scipy.sparse import csr_matrix
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 from rust_qldpc import (
-    SyndromeMinSumDecoder,
     SyndromeSpaDecoder,
     SyndromeSpaGdDecoder,
 )
@@ -36,22 +36,34 @@ def compute_syndrome_batch(errors, H_col_indices, H_indptr, m):
 def simulate_LER_batch(
     H: csr_matrix,
     decoder,
-    num_trials: int,
+    max_trials: int,
     seed: int,
 ):
     np.random.seed(seed)
 
     m, n = H.shape  # type: ignore
 
-    errors = (np.random.random((num_trials, n)) < p).astype(np.uint8)
+    errors = (np.random.random((max_trials, n)) < p).astype(np.uint8)
     s = compute_syndrome_batch(errors, H.indices, H.indptr, m)
 
-    e_hat = decoder.decode_batch(s)
-    s_hat = compute_syndrome_batch(e_hat, H.indices, H.indptr, m)
+    s_split = s.reshape((100, -1, s.shape[1]))
 
-    LER = np.mean(((s - s_hat) % 2).any(axis=1))
+    num_errors = 0
+    num_trials = 0
 
-    return LER
+    for s_batch in tqdm(s_split):
+        if num_errors >= 100:
+            break
+
+        e_hat = decoder.decode_batch(s_batch)
+        s_hat = compute_syndrome_batch(e_hat, H.indices, H.indptr, m)
+
+        num_errors += np.sum(((s_batch - s_hat) % 2).any(axis=1))
+        num_trials += s_batch.shape[0]
+
+    LER = num_errors / num_trials
+
+    return LER, num_trials
 
 
 # %% [markdown]
@@ -65,8 +77,7 @@ def simulate_LER_batch(
 
 N = 144
 seed = 2
-num_trials_bp = 1000
-num_trials_bpgd = 1000
+max_trials = 100000
 max_iter_bp = 120
 max_iter_bpgd = 100000
 T = 1
@@ -74,6 +85,7 @@ T = 1
 ps = [0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1]
 
 LERs_bp = []
+trials_bp = []
 
 for p in ps:
     code = create_QC_GHP_codes(
@@ -93,11 +105,13 @@ for p in ps:
         max_iter=max_iter_bp,
     )
 
-    LER = simulate_LER_batch(H_csr, decoder, num_trials_bp, seed)
+    LER, num_trials = simulate_LER_batch(H_csr, decoder, max_trials, seed)
     LERs_bp.append(LER)
+    trials_bp.append(num_trials)
     print(f"p: {p:.3f}, LER: {LER:.6f}")
 
 LERs_bpgd = []
+trials_bpgd = []
 
 for p in ps:
     code = create_QC_GHP_codes(
@@ -118,8 +132,9 @@ for p in ps:
         T=T,
     )
 
-    LER = simulate_LER_batch(H_csr, decoder, num_trials_bpgd, seed)
+    LER, num_trials = simulate_LER_batch(H_csr, decoder, max_trials, seed)
     LERs_bpgd.append(LER)
+    trials_bpgd.append(num_trials)
     print(f"p: {p:.3f}, LER: {LER:.6f}")
 
 
@@ -127,10 +142,12 @@ for p in ps:
 
 
 LERs_bp = np.array(LERs_bp)
-sigma_bp = np.sqrt(LERs_bp * (1 - LERs_bp) / num_trials_bp)
+trials_bp = np.array(trials_bp)
+sigma_bp = np.sqrt(LERs_bp * (1 - LERs_bp) / trials_bp)
 
 LERs_bpgd = np.array(LERs_bpgd)
-sigma_bpgd = np.sqrt(LERs_bpgd * (1 - LERs_bpgd) / num_trials_bpgd)
+trials_bpgd = np.array(trials_bpgd)
+sigma_bpgd = np.sqrt(LERs_bpgd * (1 - LERs_bpgd) / trials_bpgd)
 
 LERs_paper_bp = [
     0.04314399656081324,
