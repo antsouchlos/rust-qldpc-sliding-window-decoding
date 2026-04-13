@@ -2,6 +2,7 @@ use sprs::{CsMat, DenseVector};
 
 use crate::decoders::Decoder;
 use crate::decoders::bp::SimpleSyndromeBpDecoder;
+use crate::decoders::bpgd::SyndromeBpGdDecoder;
 use crate::decoders::core::{Edge, SyndromeBpDecoder, SyndromeBpStrategy};
 use crate::windowing::{OverlapInfo, split_pcm, split_priors};
 use crate::windowing::{get_overlap_info, get_window_borders};
@@ -208,9 +209,62 @@ where
     }
 }
 
-// TODO: Implement this for BPGD as well
 impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
     for SimpleSyndromeBpDecoder<Core>
+{
+    fn get_cn_to_vn_tail(
+        &self,
+        start_row: usize,
+        start_col: usize,
+    ) -> Vec<Edge> {
+        self.core
+            .get_state_ref()
+            .edges
+            .iter()
+            .filter(|e| e.row >= start_row && e.col >= start_col)
+            .map(|e| Edge {
+                row: e.row - start_row,
+                col: e.col - start_col,
+                msg_vn_to_cn: 0.0,
+                msg_cn_to_vn: e.msg_cn_to_vn,
+            })
+            .collect()
+    }
+
+    fn set_cn_to_vn_head(
+        &mut self,
+        msgs: &[Edge],
+        num_rows: usize,
+        num_cols: usize,
+    ) {
+        assert!(msgs.iter().all(|e| e.row < num_rows && e.col < num_cols));
+
+        // Two-pointer merge: both edge lists are in (row, col) sorted CSR order.
+        let mut msg_iter = msgs.iter().peekable();
+        for edge in self.core.get_state().edges.iter_mut() {
+            if edge.row >= num_rows || edge.col >= num_cols {
+                continue;
+            }
+            // Advance msg_iter past entries that sort before this edge.
+            loop {
+                match msg_iter.peek() {
+                    Some(m) if (m.row, m.col) < (edge.row, edge.col) => {
+                        msg_iter.next();
+                    }
+                    _ => break,
+                }
+            }
+            if let Some(m) = msg_iter.peek() {
+                if m.row == edge.row && m.col == edge.col {
+                    edge.msg_cn_to_vn = m.msg_cn_to_vn;
+                }
+            }
+        }
+    }
+}
+
+impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
+    for SyndromeBpGdDecoder<Core>
 {
     fn get_cn_to_vn_tail(
         &self,
