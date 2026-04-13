@@ -1,5 +1,5 @@
 use crate::decoders::{
-    self, Decoder,
+    Decoder,
     core::{Edge, SyndromeBpDecoder, SyndromeBpStrategy},
 };
 
