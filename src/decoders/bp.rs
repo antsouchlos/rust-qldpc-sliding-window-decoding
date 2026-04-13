@@ -31,6 +31,7 @@ pub struct SimpleSyndromeBpDecoder<Core: SyndromeBpStrategy> {
 impl<Core: SyndromeBpStrategy> Decoder for SimpleSyndromeBpDecoder<Core> {
     type Settings = Settings;
 
+    // TODO: Should a reset happen here?
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
         let mut e_hat: Vec<u8> = self
             .core

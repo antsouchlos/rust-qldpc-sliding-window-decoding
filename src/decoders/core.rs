@@ -1,4 +1,5 @@
 pub mod min_sum;
+pub mod naive_spa;
 pub mod spa;
 
 use std::ops::Range;
