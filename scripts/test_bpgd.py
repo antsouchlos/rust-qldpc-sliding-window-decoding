@@ -1,23 +1,13 @@
-import sys
 import numba as nb
 import numpy as np
-from numpy.typing import NDArray
-from scipy.sparse import csr_matrix, csc_matrix
+from scipy.sparse import csr_matrix
 import matplotlib.pyplot as plt
-from tqdm import tqdm
-
-import stim
-from quits.simulation import get_stim_mem_result
 
 from rust_qldpc import (
     SyndromeMinSumDecoder,
     SyndromeSpaDecoder,
     SyndromeSpaGdDecoder,
 )
-
-# from py3s.bp import BpDecoder
-# from py3s.bpgd import BpGdDecoder
-# from py3s.util import build_bb_circuit
 
 from sw_gdg.codes_q import create_cyclic_permuting_matrix, create_QC_GHP_codes
 
