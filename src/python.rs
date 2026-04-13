@@ -455,7 +455,8 @@ impl PyWindowingSyndromeMinSumDecoder {
 
 #[pyclass(name = "WindowingSyndromeSpaGdDecoder")]
 pub struct PyWindowingSyndromeSpaGdDecoder {
-    decoder: WindowingSyndromeBpDecoder<SyndromeBpGdDecoder<SyndromeSpaCore>>,
+    decoder:
+        WindowingSyndromeBpDecoder<SyndromeBpGdDecoder<SyndromeNaiveSpaCore>>,
 }
 
 #[pymethods]
