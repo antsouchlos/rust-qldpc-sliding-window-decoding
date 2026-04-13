@@ -34,6 +34,8 @@ impl PhiTable {
     /// Look up phi(x) using linear interpolation between table entries.
     #[inline]
     pub fn lookup(&self, x: f64) -> f64 {
+        assert!(x >= 0.0);
+
         if x >= self.x_max {
             return 0.0;
         }
@@ -48,18 +50,25 @@ impl PhiTable {
     }
 }
 
+// TODO: Get rid of magic numbers and make these paramaters properly
+// configurable
 impl Default for PhiTable {
     fn default() -> Self {
-        Self::new(8192, 20.0)
+        Self::new(2usize.pow(16), 25.0)
     }
 }
 
 #[derive(Clone)]
+#[allow(non_snake_case)]
 pub struct SyndromeSpaCore {
     state: SyndromeBpCore,
+    /// Lookup table used instead of computing tanh and arctanh directly
     phi_table: PhiTable,
+    /// VN->CN messages are clipped to [-K,+K]
+    K: f64,
 }
 
+// TODO: Don't hardcode clipping value
 impl SyndromeBpStrategy for SyndromeSpaCore {
     #[allow(non_snake_case)]
     fn new(H: &CsMat<u8>, channel_llrs: &[f64]) -> Self {
@@ -103,6 +112,7 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
                 num_cns,
             },
             phi_table: PhiTable::default(),
+            K: 25.0,
         }
     }
 
@@ -118,16 +128,18 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
 
             let mut total = self.state.channel_llrs[i];
             for j in 0..num_neighbors {
-                let idx = self.state.vn_indices[i][j];
-                total += self.state.edges[idx].msg_cn_to_vn;
+                let edge_idx = self.state.vn_indices[i][j];
+                total += self.state.edges[edge_idx].msg_cn_to_vn;
             }
 
             // Assign outgoing messages
 
             for j in 0..num_neighbors {
                 let edge_idx = self.state.vn_indices[i][j];
+                let msg = total - self.state.edges[edge_idx].msg_cn_to_vn;
+
                 self.state.edges[edge_idx].msg_vn_to_cn =
-                    total - self.state.edges[edge_idx].msg_cn_to_vn;
+                    msg.clamp(-self.K, self.K);
             }
         }
     }
@@ -140,7 +152,7 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
     ///     with Guided Decimation," arXiv:2312.10950, 2024.
     fn cn_update(&mut self, s: &[u8]) {
         for j in 0..self.state.num_cns {
-            let range = self.state.cn_ranges[j].clone();
+            let neighboring_edge_indices = self.state.cn_ranges[j].clone();
             let syndrome_sign = 1.0 - 2.0 * s[j] as f64;
 
             let mut total_phi = 0.0;
@@ -148,8 +160,8 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
 
             // Combine all incoming messages
 
-            for i_idx in range.clone() {
-                let msg_i_to_j = self.state.edges[i_idx].msg_vn_to_cn;
+            for edge_idx in neighboring_edge_indices.clone() {
+                let msg_i_to_j = self.state.edges[edge_idx].msg_vn_to_cn;
                 total_sign *= msg_i_to_j.signum();
 
                 let phi = self.phi_table.lookup(msg_i_to_j.abs());
@@ -158,11 +170,11 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
 
             // Assign outgoing messages
 
-            for edge_idx in range {
-                let msg = self.state.edges[edge_idx].msg_vn_to_cn;
-                let phi = self.phi_table.lookup(msg.abs());
+            for edge_idx in neighboring_edge_indices {
+                let msg_i_to_j = self.state.edges[edge_idx].msg_vn_to_cn;
+                let phi = self.phi_table.lookup(msg_i_to_j.abs());
                 let extrinsic_phi = total_phi - phi;
-                let extrinsic_sign = total_sign * msg.signum();
+                let extrinsic_sign = total_sign * msg_i_to_j.signum();
 
                 let out = extrinsic_sign * self.phi_table.lookup(extrinsic_phi);
                 self.state.edges[edge_idx].msg_cn_to_vn = out;
@@ -229,7 +241,7 @@ mod tests {
             let approx = table.lookup(x);
 
             assert!(
-                (approx - exact).abs() < 1e-5,
+                (approx - exact).abs() < 1e-7,
                 "phi({x}): got {approx}, exact {exact}"
             );
         }
@@ -239,7 +251,7 @@ mod tests {
     fn test_phi_boundary() {
         let table = PhiTable::default();
 
-        assert_eq!(table.lookup(20.0), 0.0);
+        assert_eq!(table.lookup(25.0), 0.0);
         assert_eq!(table.lookup(100.0), 0.0);
     }
 

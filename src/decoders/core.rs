@@ -15,6 +15,7 @@ pub struct Edge {
     pub msg_cn_to_vn: f64,
 }
 
+// TODO: Doc comments to explain data structure
 #[derive(Clone)]
 pub struct SyndromeBpCore {
     pub edges: Vec<Edge>,
@@ -26,6 +27,8 @@ pub struct SyndromeBpCore {
     pub num_cns: usize,
 }
 
+// TODO: Don't require the new function in this trait. Different strategies
+// might need different parameters (e.g., clippling value)
 pub trait SyndromeBpStrategy {
     #[allow(non_snake_case)]
     fn new(H: &CsMat<u8>, channel_llrs: &[f64]) -> Self;
