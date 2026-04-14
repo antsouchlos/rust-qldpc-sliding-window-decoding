@@ -177,18 +177,18 @@ where
                 prev_win_overlap_start.0,
                 prev_win_overlap_start.1,
             );
-        let prev_channel_llrs = self.window_decoders[win_idx - 1]
-            .get_channel_llr_tail(prev_win_overlap_start.1);
+        // let prev_channel_llrs = self.window_decoders[win_idx - 1]
+        //     .get_channel_llr_tail(prev_win_overlap_start.1);
 
         self.window_decoders[win_idx].set_cn_to_vn_head(
             &prev_cn_to_vn_msgs,
             curr_win_overlap_end.0 + 1,
             curr_win_overlap_end.1 + 1,
         );
-        self.window_decoders[win_idx].set_channel_llr_head(
-            &prev_channel_llrs,
-            curr_win_overlap_end.1 + 1,
-        );
+        // self.window_decoders[win_idx].set_channel_llr_head(
+        //     &prev_channel_llrs,
+        //     curr_win_overlap_end.1 + 1,
+        // );
     }
 }
 
