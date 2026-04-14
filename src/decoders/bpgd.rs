@@ -52,15 +52,7 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpGdDecoder<Core> {
             if num_iter > self.settings.max_iter {
                 break;
             }
-            if self
-                .core
-                .get_state()
-                .total_llrs
-                .iter()
-                .all(|&v| v.is_infinite())
-            {
-                break;
-            }
+            num_iter += self.settings.T;
 
             for _ in 0..self.settings.T {
                 self.core.vn_update();
@@ -101,7 +93,15 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpGdDecoder<Core> {
             self.core.get_state().channel_llrs[max_llr_index] =
                 sign * f64::INFINITY;
 
-            num_iter += self.settings.T;
+            if self
+                .core
+                .get_state()
+                .channel_llrs
+                .iter()
+                .all(|&v| v.is_infinite())
+            {
+                break;
+            }
         }
 
         e_hat
