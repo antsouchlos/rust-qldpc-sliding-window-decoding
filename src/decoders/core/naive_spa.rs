@@ -7,7 +7,9 @@ pub struct SyndromeNaiveSpaCore {
     state: SyndromeBpCore,
 }
 
-// TODO: Don't hardcode clipping value
+// TODO: The ad hoc clipping logic in this is pretty ugly. Properly implement
+// BPGD so clipping can be done conventionally, without having to keep
+// infinite values infinite
 impl SyndromeBpStrategy for SyndromeNaiveSpaCore {
     #[allow(non_snake_case)]
     fn new(H: &CsMat<u8>, channel_llrs: &[f64]) -> Self {
@@ -75,7 +77,11 @@ impl SyndromeBpStrategy for SyndromeNaiveSpaCore {
                 let edge_idx = self.state.vn_indices[i][j];
                 let msg = total - self.state.edges[edge_idx].msg_cn_to_vn;
 
-                self.state.edges[edge_idx].msg_vn_to_cn = msg;
+                if total.is_infinite() {
+                    self.state.edges[edge_idx].msg_vn_to_cn = total;
+                } else {
+                    self.state.edges[edge_idx].msg_vn_to_cn = msg;
+                }
             }
         }
     }
@@ -96,21 +102,35 @@ impl SyndromeBpStrategy for SyndromeNaiveSpaCore {
             // Combine all incoming messages
 
             for edge_idx in neighboring_edge_indices.clone() {
-                let msg_i_to_j = self.state.edges[edge_idx].msg_vn_to_cn;
-                total_prod *= (msg_i_to_j / 2.0).tanh();
+                let mut msg = self.state.edges[edge_idx].msg_vn_to_cn;
+                if msg.abs() < 1e-6 {
+                    msg = 1e-6 * msg.signum();
+                }
+
+                if msg.is_infinite() {
+                    total_prod *= msg.signum();
+                } else {
+                    total_prod *= (msg / 2.0).tanh();
+                }
             }
 
             // Assign outgoing messages
 
             for edge_idx in neighboring_edge_indices {
-                let msg_i_to_j = self.state.edges[edge_idx].msg_vn_to_cn;
+                let mut msg = self.state.edges[edge_idx].msg_vn_to_cn;
+                if msg.abs() < 1e-6 {
+                    msg = 1e-6 * msg.signum();
+                }
 
-                let mut extrinsic_prod = total_prod / (msg_i_to_j / 2.0).tanh();
+                let extrinsic_prod = if msg.is_infinite() {
+                    total_prod * msg.signum()
+                } else {
+                    total_prod / (msg / 2.0).tanh()
+                };
 
-                extrinsic_prod = extrinsic_prod.clamp(-1.0 + 1e-7, 1.0 - 1e-7);
-
-                self.state.edges[edge_idx].msg_cn_to_vn =
-                    2.0 * syndrome_sign * extrinsic_prod.atanh();
+                self.state.edges[edge_idx].msg_cn_to_vn = 2.0
+                    * syndrome_sign
+                    * extrinsic_prod.clamp(-1.0 + 1e-7, 1.0 - 1e-7).atanh();
             }
         }
     }
