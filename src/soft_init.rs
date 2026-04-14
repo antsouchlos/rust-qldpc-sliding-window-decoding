@@ -4,7 +4,7 @@ use crate::decoders::Decoder;
 use crate::decoders::bp::SimpleSyndromeBpDecoder;
 use crate::decoders::bpgd::SyndromeBpGdDecoder;
 use crate::decoders::core::{Edge, SyndromeBpDecoder, SyndromeBpStrategy};
-use crate::windowing::{OverlapInfo, split_pcm, split_priors};
+use crate::windowing::{OverlapInfo, split_channel_llrs, split_pcm};
 use crate::windowing::{get_overlap_info, get_window_borders};
 
 #[derive(Clone)]
@@ -66,12 +66,12 @@ where
             get_window_borders(&H, m, num_rounds, settings.W, settings.F);
 
         let win_Hs = split_pcm(&H, &window_borders);
-        let win_priors = split_priors(&channel_llrs, &window_borders);
+        let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
         let overlap_info = get_overlap_info(&window_borders);
 
         let window_decoders = win_Hs
             .iter()
-            .zip(win_priors)
+            .zip(win_llrs)
             .map(|(H, channel_llrs)| {
                 InnerDecoder::new(inner_settings.clone(), &H, &channel_llrs)
             })
@@ -177,7 +177,7 @@ where
                 prev_win_overlap_start.0,
                 prev_win_overlap_start.1,
             );
-        let prev_channel_llr_msgs = self.window_decoders[win_idx - 1]
+        let prev_channel_llrs = self.window_decoders[win_idx - 1]
             .get_channel_llr_tail(prev_win_overlap_start.1);
 
         self.window_decoders[win_idx].set_cn_to_vn_head(
@@ -186,7 +186,7 @@ where
             curr_win_overlap_end.1 + 1,
         );
         self.window_decoders[win_idx].set_channel_llr_head(
-            &prev_channel_llr_msgs,
+            &prev_channel_llrs,
             curr_win_overlap_end.1 + 1,
         );
     }
@@ -533,7 +533,8 @@ mod tests {
             &[0, 0, 0, 0, 0, 1, 1, 1],
         ]);
 
-        let channel_llrs = Vec::<f64>::zeros(H.cols());
+        let channel_llrs =
+            (0..H.cols()).map(|v| v as f64).collect::<Vec<f64>>();
 
         let mut decoder = WindowingSyndromeBpDecoder::<
             SimpleSyndromeBpDecoder<SyndromeMinSumCore>,
@@ -571,6 +572,11 @@ mod tests {
             e.msg_cn_to_vn = (idx + 1) as f64;
         }
 
+        decoder.window_decoders[0].core.get_state().channel_llrs =
+            (0..6).map(|v| v as f64).collect::<Vec<f64>>();
+        decoder.window_decoders[1].core.get_state().channel_llrs =
+            (0..4).map(|v| v as f64).collect::<Vec<f64>>();
+
         for (idx, e) in &mut decoder.window_decoders[1]
             .core
             .0
@@ -593,6 +599,11 @@ mod tests {
             .map(|e| e.msg_cn_to_vn)
             .collect();
         assert_eq!(expected, got);
+
+        assert_eq!(
+            decoder.window_decoders[1].core.get_state().channel_llrs,
+            vec![4.0, 5.0, 2.0, 3.0]
+        );
     }
 
     #[test]

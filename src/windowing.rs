@@ -150,7 +150,7 @@ pub fn split_pcm(
     result
 }
 
-pub fn split_priors(
+pub fn split_channel_llrs(
     priors: &[f64],
     window_borders: &Vec<((usize, usize), (usize, usize))>,
 ) -> Vec<Vec<f64>> {
@@ -363,25 +363,20 @@ mod tests {
     }
 
     #[test]
+    #[allow(non_snake_case)]
     fn test_split_pcm_vs_quits() {
         unsafe {
             pyo3::ffi::Py_InitializeEx(0);
         }
 
-        #[allow(non_snake_case)]
         let mut win_Hs = Vec::<Vec<Vec<u8>>>::new();
-        #[allow(non_snake_case)]
         let mut win_priors = Vec::<Vec<f64>>::new();
-        #[allow(non_snake_case)]
         let mut circuit_H = Vec::<Vec<u8>>::new();
-        #[allow(non_snake_case)]
         let mut circuit_priors = Vec::<f64>::new();
 
         let mut m: usize = 0;
         let mut num_rounds: usize = 0;
-        #[allow(non_snake_case)]
         let mut W: usize = 0;
-        #[allow(non_snake_case)]
         let mut F: usize = 0;
 
         Python::try_attach(|py| {
@@ -496,7 +491,6 @@ circuit_H_dense = circuit_H.toarray().astype('uint8').tolist()
             })
             .expect("Python interpreter not initialized");
 
-        #[allow(non_snake_case)]
         let win_Hs: Vec<CsMat<u8>> = win_Hs
             .iter()
             .map(|v| {
@@ -506,7 +500,6 @@ circuit_H_dense = circuit_H.toarray().astype('uint8').tolist()
             })
             .collect();
 
-        #[allow(non_snake_case)]
         let circuit_H = csr_from_dense(
             &circuit_H
                 .iter()
@@ -516,9 +509,8 @@ circuit_H_dense = circuit_H.toarray().astype('uint8').tolist()
 
         let window_borders =
             get_window_borders(&circuit_H, m, num_rounds, W, F);
-        #[allow(non_snake_case)]
         let split_Hs = split_pcm(&circuit_H, &window_borders);
-        let split_priors = split_priors(&circuit_priors, &window_borders);
+        let split_priors = split_channel_llrs(&circuit_priors, &window_borders);
 
         assert_eq!(win_Hs, split_Hs);
         assert_eq!(win_priors, split_priors);
