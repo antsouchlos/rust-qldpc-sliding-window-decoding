@@ -52,6 +52,15 @@ impl<Core: SyndromeBpStrategy> Decoder for SyndromeBpGdDecoder<Core> {
             if num_iter > self.settings.max_iter {
                 break;
             }
+            if self
+                .core
+                .get_state()
+                .total_llrs
+                .iter()
+                .all(|&v| v.is_infinite())
+            {
+                break;
+            }
 
             for _ in 0..self.settings.T {
                 self.core.vn_update();

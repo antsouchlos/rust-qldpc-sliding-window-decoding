@@ -30,6 +30,10 @@ pub trait SoftInitBpDecoder: SyndromeBpDecoder {
         end_row: usize,
         end_col: usize,
     );
+
+    fn get_channel_llr_tail(&self, start_col: usize) -> Vec<f64>;
+
+    fn set_channel_llr_head(&mut self, channel_llrs: &[f64], num_cols: usize);
 }
 
 #[derive(Clone)]
@@ -168,14 +172,21 @@ where
             self.overlap_info.begin_positions[win_idx - 1];
         let curr_win_overlap_end = self.overlap_info.end_positions[win_idx - 1];
 
-        let prev_soft_info = self.window_decoders[win_idx - 1]
+        let prev_cn_to_vn_msgs = self.window_decoders[win_idx - 1]
             .get_cn_to_vn_tail(
                 prev_win_overlap_start.0,
                 prev_win_overlap_start.1,
             );
+        let prev_channel_llr_msgs = self.window_decoders[win_idx - 1]
+            .get_channel_llr_tail(prev_win_overlap_start.1);
+
         self.window_decoders[win_idx].set_cn_to_vn_head(
-            &prev_soft_info,
+            &prev_cn_to_vn_msgs,
             curr_win_overlap_end.0 + 1,
+            curr_win_overlap_end.1 + 1,
+        );
+        self.window_decoders[win_idx].set_channel_llr_head(
+            &prev_channel_llr_msgs,
             curr_win_overlap_end.1 + 1,
         );
     }
@@ -261,11 +272,21 @@ impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
             }
         }
     }
+
+    fn get_channel_llr_tail(&self, start_col: usize) -> Vec<f64> {
+        self.core.get_state_ref().channel_llrs[start_col..].to_vec()
+    }
+
+    fn set_channel_llr_head(&mut self, channel_llrs: &[f64], num_cols: usize) {
+        assert!(num_cols <= self.core.get_state_ref().channel_llrs.len());
+
+        for i in 0..num_cols {
+            self.core.get_state().channel_llrs[i] = channel_llrs[i];
+        }
+    }
 }
 
-impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
-    for SyndromeBpGdDecoder<Core>
-{
+impl<Core: SyndromeBpStrategy> SoftInitBpDecoder for SyndromeBpGdDecoder<Core> {
     fn get_cn_to_vn_tail(
         &self,
         start_row: usize,
@@ -313,6 +334,18 @@ impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
                     edge.msg_cn_to_vn = m.msg_cn_to_vn;
                 }
             }
+        }
+    }
+
+    fn get_channel_llr_tail(&self, start_col: usize) -> Vec<f64> {
+        self.core.get_state_ref().channel_llrs[start_col..].to_vec()
+    }
+
+    fn set_channel_llr_head(&mut self, channel_llrs: &[f64], num_cols: usize) {
+        assert!(num_cols <= self.core.get_state_ref().channel_llrs.len());
+
+        for i in 0..num_cols {
+            self.core.get_state().channel_llrs[i] = channel_llrs[i];
         }
     }
 }
