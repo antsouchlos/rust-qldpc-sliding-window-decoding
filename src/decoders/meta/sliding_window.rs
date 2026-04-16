@@ -76,7 +76,7 @@ where
         let mut win_pcms =
             Vec::<ParityCheckMatrix>::with_capacity(win_hs.len());
         for win_h in win_hs {
-            let pcm = ParityCheckMatrix::new(win_h);
+            let pcm = ParityCheckMatrix::new(&win_h);
             win_pcms.push(pcm);
         }
 
@@ -129,9 +129,15 @@ where
         }
 
         let s = self.win_pcms[win_idx].compute_syndrome(e_hat);
-        s[self.overlap_info.begin_positions[win_idx].0
-            ..=self.overlap_info.end_positions[win_idx].0]
-            .to_vec()
+        let overlap_s = &s[self.overlap_info.begin_positions[win_idx].0..];
+
+        let next_win = &self.window_borders[win_idx + 1];
+        let next_win_rows = next_win.1.0 - next_win.0.0 + 1;
+
+        let mut result = vec![0u8; next_win_rows];
+        let copy_len = overlap_s.len().min(next_win_rows);
+        result[..copy_len].copy_from_slice(&overlap_s[..copy_len]);
+        result
     }
 
     fn get_commited_e_hat<'a>(
@@ -182,13 +188,11 @@ where
             self.window_decoders[win_idx].set_cn_to_vn_msg(e_dst, msg);
         }
 
-        // let prev_channel_llrs = self.window_decoders[win_idx - 1]
-        //     .get_channel_llr_tail(prev_win_overlap_start.1);
-        //
-        // self.window_decoders[win_idx].set_channel_llr_head(
-        //     &prev_channel_llrs,
-        //     curr_win_overlap_end.1 + 1,
-        // );
+        for i in 0..=curr_win_overlap_end.1 {
+            let llr = self.window_decoders[win_idx - 1]
+                .get_channel_llr(prev_win_overlap_start.1 + i);
+            self.window_decoders[win_idx].set_channel_llr(i, llr);
+        }
     }
 }
 
@@ -221,360 +225,372 @@ where
     }
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//
-//     use crate::decoders::{bp, core::min_sum::SyndromeMinSumCore};
-//     use sprs::TriMat;
-//
-//     #[allow(non_snake_case)]
-//     fn get_hamming_H() -> sprs::CsMat<u8> {
-//         #[allow(non_snake_case)]
-//         let mut H = TriMat::<u8>::new((3, 7));
-//
-//         H.add_triplet(0, 0, 1);
-//         H.add_triplet(1, 1, 1);
-//         H.add_triplet(2, 2, 1);
-//         H.add_triplet(0, 3, 1);
-//         H.add_triplet(2, 3, 1);
-//         H.add_triplet(0, 4, 1);
-//         H.add_triplet(1, 4, 1);
-//         H.add_triplet(1, 5, 1);
-//         H.add_triplet(2, 5, 1);
-//         H.add_triplet(0, 6, 1);
-//         H.add_triplet(1, 6, 1);
-//         H.add_triplet(2, 6, 1);
-//
-//         H.to_csr()
-//     }
-//
-//     fn csr_from_dense(rows: &[&[u8]]) -> CsMat<u8> {
-//         let nrows = rows.len();
-//         let ncols = rows[0].len();
-//         let mut tri = TriMat::new((nrows, ncols));
-//         for (i, row) in rows.iter().enumerate() {
-//             for (j, &val) in row.iter().enumerate() {
-//                 if val != 0 {
-//                     tri.add_triplet(i, j, val);
-//                 }
-//             }
-//         }
-//         tri.to_csr()
-//     }
-//
-//     #[test]
-//     fn test_soft_init_get() {
-//         #[allow(non_snake_case)]
-//         let H = get_hamming_H();
-//         let channel_llrs: Vec<f64> = (0..H.cols()).map(|_| 0.0).collect();
-//
-//         let mut decoder = SimpleSyndromeBpDecoder::<SyndromeMinSumCore>::new(
-//             bp::Settings { max_iter: 32 },
-//             &H,
-//             &channel_llrs,
-//         );
-//
-//         for (idx, edge) in &mut decoder.core.0.edges.iter_mut().enumerate() {
-//             edge.msg_cn_to_vn = (idx + 1) as f64;
-//         }
-//
-//         //     1 0 0 1 1 0 1
-//         // H = 0 1 0 0 1 1 1
-//         //     0 0 1 1 0 1 1
-//         //
-//         //            1 0 0 2  3 0  4
-//         // L_{i<-j} = 0 5 0 0  6 7  8
-//         //            0 0 9 10 0 11 12
-//
-//         let expected1 = vec![6.0, 7.0, 8.0, 10.0, 11.0, 12.0];
-//         let got1: Vec<f64> = decoder
-//             .get_cn_to_vn_tail(1, 3)
-//             .iter()
-//             .map(|e| e.msg_cn_to_vn)
-//             .collect();
-//
-//         let expected2 = vec![3.0, 4.0, 6.0, 7.0, 8.0, 11.0, 12.0];
-//         let got2: Vec<f64> = decoder
-//             .get_cn_to_vn_tail(0, 4)
-//             .iter()
-//             .map(|e| e.msg_cn_to_vn)
-//             .collect();
-//
-//         let expected3 = vec![9.0, 10.0, 11.0, 12.0];
-//         let got3: Vec<f64> = decoder
-//             .get_cn_to_vn_tail(2, 0)
-//             .iter()
-//             .map(|e| e.msg_cn_to_vn)
-//             .collect();
-//
-//         assert_eq!(expected1, got1);
-//         assert_eq!(expected2, got2);
-//         assert_eq!(expected3, got3);
-//     }
-//
-//     #[test]
-//     fn test_window_result_manipulation() {
-//         #[allow(non_snake_case)]
-//         let H = csr_from_dense(&[
-//             &[1, 1, 0, 0, 0, 0, 0, 0],
-//             &[1, 1, 0, 0, 0, 0, 0, 0],
-//             &[0, 1, 1, 1, 0, 0, 0, 0],
-//             &[0, 1, 1, 1, 0, 0, 0, 0],
-//             &[0, 0, 0, 1, 1, 1, 0, 0],
-//             &[0, 0, 0, 1, 1, 1, 0, 0],
-//             &[0, 0, 0, 0, 0, 1, 1, 1],
-//             &[0, 0, 0, 0, 0, 1, 1, 1],
-//         ]);
-//
-//         let channel_llrs = Vec::<f64>::zeros(H.cols());
-//
-//         let decoder = WindowingSyndromeBpDecoder::<
-//             SimpleSyndromeBpDecoder<SyndromeMinSumCore>,
-//         >::new(
-//             Settings {
-//                 pass_soft_info: false,
-//                 F: 2,
-//                 W: 3,
-//             },
-//             bp::Settings { max_iter: 32 },
-//             &H,
-//             2,
-//             4 - 2,
-//             &channel_llrs,
-//         );
-//
-//         // 1 1 0 0   0 0 | 0 0
-//         // 1 1 0 0   0 0 | 0 0
-//         // 0 1 1 1   0 0 | 0 0
-//         // 0 1 1 1   0 0 | 0 0
-//         //         ...........
-//         // 0 0 0 1 . 1 1 | 0 0
-//         // 0 0 0 1 . 1 1 | 0 0
-//         // --------. ---------
-//         // 0 0 0 0 . 0 1 | 1 1
-//         // 0 0 0 0 . 0 1 | 1 1
-//
-//         let s: Vec<u8> = (0..H.rows()).map(|v| v as u8).collect();
-//
-//         // Window 1
-//
-//         let e_hat: Vec<u8> = (0..6).map(|v| v as u8).collect();
-//         let got = decoder.get_commited_e_hat(&e_hat, 0);
-//         let expected = vec![0, 1, 2, 3];
-//         assert_eq!(expected, got);
-//
-//         let got = decoder.cut_out_current_window_syndrome(&s, 0);
-//         let expected = vec![0, 1, 2, 3, 4, 5];
-//         assert_eq!(expected, got);
-//
-//         let e_hat = vec![1, 0, 0, 1, 0, 0, 0, 0];
-//         let got = decoder.get_next_window_syndrome_diff(&e_hat, 0);
-//         let expected = vec![1, 1, 0, 0];
-//         assert_eq!(expected, got);
-//
-//         // Window 1
-//
-//         let e_hat: Vec<u8> = (0..4).map(|v| v as u8).collect();
-//         let got = decoder.get_commited_e_hat(&e_hat, 1);
-//         let expected = vec![0, 1, 2, 3];
-//         assert_eq!(expected, got);
-//
-//         let got = decoder.cut_out_current_window_syndrome(&s, 1);
-//         let expected = vec![4, 5, 6, 7];
-//         assert_eq!(expected, got);
-//
-//         let e_hat = vec![1, 0, 0, 1, 0, 0, 0, 0];
-//         let got = decoder.get_next_window_syndrome_diff(&e_hat, 1);
-//         let expected = Vec::<u8>::new();
-//         assert_eq!(expected, got);
-//     }
-//
-//     #[test]
-//     fn test_soft_info_passing() {
-//         #[allow(non_snake_case)]
-//         let H = csr_from_dense(&[
-//             &[1, 1, 0, 0, 0, 0, 0, 0],
-//             &[1, 1, 0, 0, 0, 0, 0, 0],
-//             &[0, 1, 1, 1, 0, 0, 0, 0],
-//             &[0, 1, 1, 1, 0, 0, 0, 0],
-//             &[0, 0, 0, 1, 1, 1, 0, 0],
-//             &[0, 0, 0, 1, 1, 1, 0, 0],
-//             &[0, 0, 0, 0, 0, 1, 1, 1],
-//             &[0, 0, 0, 0, 0, 1, 1, 1],
-//         ]);
-//
-//         let channel_llrs =
-//             (0..H.cols()).map(|v| v as f64).collect::<Vec<f64>>();
-//
-//         let mut decoder = WindowingSyndromeBpDecoder::<
-//             SimpleSyndromeBpDecoder<SyndromeMinSumCore>,
-//         >::new(
-//             Settings {
-//                 pass_soft_info: false,
-//                 F: 2,
-//                 W: 3,
-//             },
-//             bp::Settings { max_iter: 32 },
-//             &H,
-//             2,
-//             4 - 2,
-//             &channel_llrs,
-//         );
-//
-//         // 1 2 0 0    0  0  | 0 0
-//         // 3 4 0 0    0  0  | 0 0
-//         // 0 5 6 7    0  0  | 0 0
-//         // 0 8 9 10   0  0  | 0 0
-//         //          ...........
-//         // 0 0 0 11 . 12 13 | 0 0
-//         // 0 0 0 14 . 15 16 | 0 0
-//         // -------- . ---------
-//         // 0 0 0 0  . 0  1  | 1 1
-//         // 0 0 0 0  . 0  1  | 1 1
-//
-//         for (idx, e) in &mut decoder.window_decoders[0]
-//             .core
-//             .0
-//             .edges
-//             .iter_mut()
-//             .enumerate()
-//         {
-//             e.msg_cn_to_vn = (idx + 1) as f64;
-//         }
-//
-//         decoder.window_decoders[0].core.get_state().channel_llrs =
-//             (0..6).map(|v| v as f64).collect::<Vec<f64>>();
-//         decoder.window_decoders[1].core.get_state().channel_llrs =
-//             (0..4).map(|v| v as f64).collect::<Vec<f64>>();
-//
-//         for (idx, e) in &mut decoder.window_decoders[1]
-//             .core
-//             .0
-//             .edges
-//             .iter_mut()
-//             .enumerate()
-//         {
-//             e.msg_cn_to_vn = (idx + 1) as f64;
-//         }
-//
-//         decoder.get_soft_info_from_previous_window(1);
-//
-//         let expected =
-//             vec![12.0, 13.0, 15.0, 16.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
-//         let got: Vec<f64> = decoder.window_decoders[1]
-//             .core
-//             .0
-//             .edges
-//             .iter()
-//             .map(|e| e.msg_cn_to_vn)
-//             .collect();
-//         assert_eq!(expected, got);
-//
-//         assert_eq!(
-//             decoder.window_decoders[1].core.get_state().channel_llrs,
-//             vec![4.0, 5.0, 2.0, 3.0]
-//         );
-//     }
-//
-//     #[test]
-//     fn test_soft_init_set() {
-//         #[allow(non_snake_case)]
-//         let H = csr_from_dense(&[
-//             &[1, 1, 0, 0, 0, 0, 0, 0],
-//             &[1, 1, 0, 0, 0, 0, 0, 0],
-//             &[0, 1, 1, 1, 0, 0, 0, 0],
-//             &[0, 1, 1, 1, 0, 0, 0, 0],
-//             &[0, 0, 0, 1, 1, 1, 0, 0],
-//             &[0, 0, 0, 1, 1, 1, 0, 0],
-//             &[0, 0, 0, 0, 0, 1, 1, 1],
-//             &[0, 0, 0, 0, 0, 1, 1, 1],
-//         ]);
-//
-//         let channel_llrs: Vec<f64> = (0..H.cols()).map(|_| 0.0).collect();
-//
-//         let mut decoder1 = SimpleSyndromeBpDecoder::<SyndromeMinSumCore>::new(
-//             bp::Settings { max_iter: 32 },
-//             &H,
-//             &channel_llrs,
-//         );
-//
-//         for (idx, edge) in &mut decoder1.core.0.edges.iter_mut().enumerate() {
-//             edge.msg_cn_to_vn = (idx + 1) as f64;
-//         }
-//
-//         let mut decoder2 = SimpleSyndromeBpDecoder::<SyndromeMinSumCore>::new(
-//             bp::Settings { max_iter: 32 },
-//             &H,
-//             &channel_llrs,
-//         );
-//
-//         for (idx, edge) in &mut decoder2.core.0.edges.iter_mut().enumerate() {
-//             edge.msg_cn_to_vn = (idx + 1) as f64;
-//         }
-//
-//         // Decoder 1:
-//         //            1  2  0  0  0  0  0  0
-//         //            3  4  0  0  0  0  0  0
-//         //            0  5  6  7  0  0  0  0
-//         // L_{i<-j} = 0  8  9  10 0  0  0  0
-//         //            0  0  0  11 12 13 0  0
-//         //            0  0  0  14 15 16 0  0
-//         //            0  0  0  0  0  17 18 19
-//         //            0  0  0  0  0  20 21 22
-//
-//         // Decoder 2:
-//         //            12 13 0  0  0  0  0  0
-//         //            15 16 0  0  0  0  0  0
-//         //            0  17 18 19 0  0  0  0
-//         // L_{i<-j} = 0  20 21 22 0  0  0  0
-//         //            0  0  0  11 12 13 0  0
-//         //            0  0  0  14 15 16 0  0
-//         //            0  0  0  0  0  17 18 19
-//         //            0  0  0  0  0  20 21 22
-//
-//         let soft_info = decoder1.get_cn_to_vn_tail(4, 4);
-//         decoder2.set_cn_to_vn_head(&soft_info, 4, 4);
-//
-//         let expected = vec![
-//             12.0, 13.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 11.0,
-//             12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0,
-//         ];
-//         let got: Vec<f64> = decoder2
-//             .core
-//             .0
-//             .edges
-//             .iter()
-//             .map(|e| e.msg_cn_to_vn)
-//             .collect();
-//
-//         assert_eq!(expected, got);
-//
-//         // Decoder 2:
-//         //            1  2  0  0  0  0  0  0
-//         //            3  4  0  0  0  0  0  0
-//         //            0  5  6  7  0  0  0  0
-//         // L_{i<-j} = 0  8  9  10 0  0  0  0
-//         //            0  0  0  11 12 13 0  0
-//         //            0  0  0  14 15 16 0  0
-//         //            0  0  0  0  0  17 18 19
-//         //            0  0  0  0  0  20 21 22
-//
-//         let soft_info = decoder1.get_cn_to_vn_tail(0, 0);
-//         decoder2.set_cn_to_vn_head(&soft_info, 8, 8);
-//
-//         let expected = vec![
-//             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
-//             13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0,
-//         ];
-//         let got: Vec<f64> = decoder2
-//             .core
-//             .0
-//             .edges
-//             .iter()
-//             .map(|e| e.msg_cn_to_vn)
-//             .collect();
-//
-//         assert_eq!(expected, got);
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use crate::decoders::{
+        bp::{VanillaBpDecoder, VanillaBpSettings},
+        engine::min_sum::MinSumComputeEngine,
+    };
+
+    use super::*;
+
+    use sprs::TriMat;
+
+    fn get_hamming_h() -> sprs::CsMat<u8> {
+        #[allow(non_snake_case)]
+        let mut h = TriMat::<u8>::new((3, 7));
+
+        h.add_triplet(0, 0, 1);
+        h.add_triplet(1, 1, 1);
+        h.add_triplet(2, 2, 1);
+        h.add_triplet(0, 3, 1);
+        h.add_triplet(2, 3, 1);
+        h.add_triplet(0, 4, 1);
+        h.add_triplet(1, 4, 1);
+        h.add_triplet(1, 5, 1);
+        h.add_triplet(2, 5, 1);
+        h.add_triplet(0, 6, 1);
+        h.add_triplet(1, 6, 1);
+        h.add_triplet(2, 6, 1);
+
+        h.to_csr()
+    }
+
+    fn csr_from_dense(rows: &[&[u8]]) -> CsMat<u8> {
+        let nrows = rows.len();
+        let ncols = rows[0].len();
+        let mut tri = TriMat::new((nrows, ncols));
+        for (i, row) in rows.iter().enumerate() {
+            for (j, &val) in row.iter().enumerate() {
+                if val != 0 {
+                    tri.add_triplet(i, j, val);
+                }
+            }
+        }
+        tri.to_csr()
+    }
+
+    #[test]
+    fn test_soft_init_get() {
+        #[allow(non_snake_case)]
+        let h = get_hamming_h();
+        let channel_llrs: Vec<f64> = (0..h.cols()).map(|_| 0.0).collect();
+
+        let pcm = ParityCheckMatrix::new(&h);
+
+        let mut decoder = VanillaBpDecoder::<MinSumComputeEngine>::new(
+            VanillaBpSettings { max_iter: 32 },
+            &pcm,
+            &channel_llrs,
+        );
+
+        let edge_ids: Vec<EdgeId> = pcm.slice(&(..), &(..)).collect();
+        for (idx, eid) in edge_ids.into_iter().enumerate() {
+            decoder.set_cn_to_vn_msg(eid, (idx + 1) as f64);
+        }
+
+        //     1 0 0 1 1 0 1
+        // H = 0 1 0 0 1 1 1
+        //     0 0 1 1 0 1 1
+        //
+        //            1 0 0 2  3 0  4
+        // L_{i<-j} = 0 5 0 0  6 7  8
+        //            0 0 9 10 0 11 12
+
+        let expected1 = vec![6.0, 7.0, 8.0, 10.0, 11.0, 12.0];
+
+        let edge_ids: Vec<EdgeId> = pcm.slice(&(1..), &(3..)).collect();
+        let got1: Vec<f64> = edge_ids
+            .iter()
+            .map(|&e| decoder.get_cn_to_vn_msg(e))
+            .collect();
+
+        let expected2 = vec![3.0, 4.0, 6.0, 7.0, 8.0, 11.0, 12.0];
+        let edge_ids: Vec<EdgeId> = pcm.slice(&(0..), &(4..)).collect();
+        let got2: Vec<f64> = edge_ids
+            .iter()
+            .map(|&e| decoder.get_cn_to_vn_msg(e))
+            .collect();
+
+        let expected3 = vec![9.0, 10.0, 11.0, 12.0];
+        let edge_ids: Vec<EdgeId> = pcm.slice(&(2..), &(0..)).collect();
+        let got3: Vec<f64> = edge_ids
+            .iter()
+            .map(|&e| decoder.get_cn_to_vn_msg(e))
+            .collect();
+
+        assert_eq!(expected1, got1);
+        assert_eq!(expected2, got2);
+        assert_eq!(expected3, got3);
+    }
+
+    #[test]
+    fn test_window_result_manipulation() {
+        #[allow(non_snake_case)]
+        let h = csr_from_dense(&[
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+        ]);
+
+        let channel_llrs = Vec::<f64>::zeros(h.cols());
+
+        let decoder =
+            SlidingWindowDecoder::<VanillaBpDecoder<MinSumComputeEngine>>::new(
+                Settings {
+                    pass_soft_info: false,
+                    F: 2,
+                    W: 3,
+                },
+                VanillaBpSettings { max_iter: 32 },
+                &h,
+                2,
+                4 - 2,
+                &channel_llrs,
+            );
+
+        // 1 1 0 0   0 0 | 0 0
+        // 1 1 0 0   0 0 | 0 0
+        // 0 1 1 1   0 0 | 0 0
+        // 0 1 1 1   0 0 | 0 0
+        //         ...........
+        // 0 0 0 1 . 1 1 | 0 0
+        // 0 0 0 1 . 1 1 | 0 0
+        // --------. ---------
+        // 0 0 0 0 . 0 1 | 1 1
+        // 0 0 0 0 . 0 1 | 1 1
+
+        let s: Vec<u8> = (0..h.rows()).map(|v| v as u8).collect();
+
+        // Window 1
+
+        let e_hat: Vec<u8> = (0..6).map(|v| v as u8).collect();
+        let got = decoder.get_commited_e_hat(&e_hat, 0);
+        let expected = vec![0, 1, 2, 3];
+        assert_eq!(expected, got);
+
+        let got = decoder.cut_out_current_window_syndrome(&s, 0);
+        let expected = vec![0, 1, 2, 3, 4, 5];
+        assert_eq!(expected, got);
+
+        let e_hat = vec![1, 0, 0, 1, 0, 0];
+        let got = decoder.get_next_window_syndrome_diff(&e_hat, 0);
+        let expected = vec![1, 1, 0, 0];
+        assert_eq!(expected, got);
+
+        // Window 1
+
+        let e_hat: Vec<u8> = (0..4).map(|v| v as u8).collect();
+        let got = decoder.get_commited_e_hat(&e_hat, 1);
+        let expected = vec![0, 1, 2, 3];
+        assert_eq!(expected, got);
+
+        let got = decoder.cut_out_current_window_syndrome(&s, 1);
+        let expected = vec![4, 5, 6, 7];
+        assert_eq!(expected, got);
+
+        let e_hat = vec![0, 0, 0, 0];
+        let got = decoder.get_next_window_syndrome_diff(&e_hat, 1);
+        let expected = Vec::<u8>::new();
+        assert_eq!(expected, got);
+    }
+
+    #[test]
+    fn test_soft_info_passing() {
+        #[allow(non_snake_case)]
+        let h = csr_from_dense(&[
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+        ]);
+
+        let channel_llrs =
+            (0..h.cols()).map(|v| v as f64).collect::<Vec<f64>>();
+
+        let mut decoder =
+            SlidingWindowDecoder::<VanillaBpDecoder<MinSumComputeEngine>>::new(
+                Settings {
+                    pass_soft_info: false,
+                    F: 2,
+                    W: 3,
+                },
+                VanillaBpSettings { max_iter: 32 },
+                &h,
+                2,
+                4 - 2,
+                &channel_llrs,
+            );
+
+        // 1 2 0 0    0  0  | 0 0
+        // 3 4 0 0    0  0  | 0 0
+        // 0 5 6 7    0  0  | 0 0
+        // 0 8 9 10   0  0  | 0 0
+        //          ...........
+        // 0 0 0 11 . 12 13 | 0 0
+        // 0 0 0 14 . 15 16 | 0 0
+        // -------- . ---------
+        // 0 0 0 0  . 0  1  | 1 1
+        // 0 0 0 0  . 0  1  | 1 1
+
+        let edge_ids: Vec<EdgeId> =
+            decoder.win_pcms[0].slice(&(..), &(..)).collect();
+        for (idx, eid) in edge_ids.into_iter().enumerate() {
+            decoder.window_decoders[0].set_cn_to_vn_msg(eid, (idx + 1) as f64);
+        }
+
+        for i in 0..6 {
+            decoder.window_decoders[0].set_channel_llr(i, i as f64);
+        }
+
+        let edge_ids: Vec<EdgeId> =
+            decoder.win_pcms[1].slice(&(..), &(..)).collect();
+        for (idx, eid) in edge_ids.into_iter().enumerate() {
+            decoder.window_decoders[1].set_cn_to_vn_msg(eid, (idx + 1) as f64);
+        }
+
+        for i in 0..4 {
+            decoder.window_decoders[1].set_channel_llr(i, i as f64);
+        }
+
+        decoder.transfer_soft_info_from_previous_window(1);
+
+        let expected =
+            vec![12.0, 13.0, 15.0, 16.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
+
+        let got = decoder.win_pcms[1]
+            .slice(&(..), &(..))
+            .map(|e| decoder.window_decoders[1].get_cn_to_vn_msg(e))
+            .collect::<Vec<f64>>();
+        assert_eq!(expected, got);
+
+        let channel_llrs: Vec<f64> = (0..decoder.win_pcms[1].cols())
+            .map(|i| decoder.window_decoders[1].get_channel_llr(i))
+            .collect();
+
+        assert_eq!(channel_llrs, vec![4.0, 5.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_soft_init_set() {
+        #[allow(non_snake_case)]
+        let h = csr_from_dense(&[
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+        ]);
+
+        let channel_llrs: Vec<f64> = (0..h.cols()).map(|_| 0.0).collect();
+
+        let pcm = ParityCheckMatrix::new(&h);
+
+        let mut decoder1 = VanillaBpDecoder::<MinSumComputeEngine>::new(
+            VanillaBpSettings { max_iter: 32 },
+            &pcm,
+            &channel_llrs,
+        );
+
+        let edge_ids: Vec<EdgeId> = pcm.slice(&(..), &(..)).collect();
+        for (idx, eid) in edge_ids.into_iter().enumerate() {
+            decoder1.set_cn_to_vn_msg(eid, (idx + 1) as f64);
+        }
+
+        let mut decoder2 = VanillaBpDecoder::<MinSumComputeEngine>::new(
+            VanillaBpSettings { max_iter: 32 },
+            &pcm,
+            &channel_llrs,
+        );
+
+        let edge_ids: Vec<EdgeId> = pcm.slice(&(..), &(..)).collect();
+        for (idx, eid) in edge_ids.into_iter().enumerate() {
+            decoder2.set_cn_to_vn_msg(eid, (idx + 1) as f64);
+        }
+
+        // Decoder 1:
+        //            1  2  0  0  0  0  0  0
+        //            3  4  0  0  0  0  0  0
+        //            0  5  6  7  0  0  0  0
+        // L_{i<-j} = 0  8  9  10 0  0  0  0
+        //            0  0  0  11 12 13 0  0
+        //            0  0  0  14 15 16 0  0
+        //            0  0  0  0  0  17 18 19
+        //            0  0  0  0  0  20 21 22
+
+        // Decoder 2: (after transfer)
+        //            12 13 0  0  0  0  0  0
+        //            15 16 0  0  0  0  0  0
+        //            0  17 18 19 0  0  0  0
+        // L_{i<-j} = 0  20 21 22 0  0  0  0
+        //            0  0  0  11 12 13 0  0
+        //            0  0  0  14 15 16 0  0
+        //            0  0  0  0  0  17 18 19
+        //            0  0  0  0  0  20 21 22
+
+        let decoder1_edges: Vec<EdgeId> = pcm.slice(&(4..), &(4..)).collect();
+        let decoder2_edges: Vec<EdgeId> = pcm.slice(&(..4), &(..4)).collect();
+        for (e1, e2) in
+            decoder1_edges.into_iter().zip(decoder2_edges.into_iter())
+        {
+            let msg = decoder1.get_cn_to_vn_msg(e1);
+            decoder2.set_cn_to_vn_msg(e2, msg);
+        }
+
+        let expected = vec![
+            12.0, 13.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0, 11.0,
+            12.0, 13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0,
+        ];
+
+        let edge_ids: Vec<EdgeId> = pcm.slice(&(..), &(..)).collect();
+        let got = edge_ids
+            .iter()
+            .map(|&e| decoder2.get_cn_to_vn_msg(e))
+            .collect::<Vec<f64>>();
+
+        assert_eq!(expected, got);
+
+        // Decoder 2:
+        //            1  2  0  0  0  0  0  0
+        //            3  4  0  0  0  0  0  0
+        //            0  5  6  7  0  0  0  0
+        // L_{i<-j} = 0  8  9  10 0  0  0  0
+        //            0  0  0  11 12 13 0  0
+        //            0  0  0  14 15 16 0  0
+        //            0  0  0  0  0  17 18 19
+        //            0  0  0  0  0  20 21 22
+
+        let decoder1_edges: Vec<EdgeId> = pcm.slice(&(0..), &(0..)).collect();
+        let decoder2_edges: Vec<EdgeId> = pcm.slice(&(..8), &(..8)).collect();
+        for (e1, e2) in
+            decoder1_edges.into_iter().zip(decoder2_edges.into_iter())
+        {
+            let msg = decoder1.get_cn_to_vn_msg(e1);
+            decoder2.set_cn_to_vn_msg(e2, msg);
+        }
+
+        let expected = vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
+            13.0, 14.0, 15.0, 16.0, 17.0, 18.0, 19.0, 20.0, 21.0, 22.0,
+        ];
+        let edge_ids: Vec<EdgeId> = pcm.slice(&(..), &(..)).collect();
+        let got: Vec<f64> = edge_ids
+            .iter()
+            .map(|&e| decoder2.get_cn_to_vn_msg(e))
+            .collect();
+
+        assert_eq!(expected, got);
+    }
+}

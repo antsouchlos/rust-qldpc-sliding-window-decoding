@@ -4,8 +4,6 @@ use rust_qldpc::decoders::{
     engine::{ParityCheckMatrix, spa::SpaComputeEngine},
 };
 
-use rust_qldpc::decoders::meta::sliding_window;
-
 use sprs::TriMat;
 
 fn make_ldpc(n: usize) -> sprs::CsMat<u8> {
@@ -35,7 +33,7 @@ fn main() {
     let mut syndrome = vec![0u8; h.rows()];
     syndrome[0] = 1;
 
-    let pcm = ParityCheckMatrix::new(h);
+    let pcm = ParityCheckMatrix::new(&h);
 
     let settings = VanillaBpSettings { max_iter: 100 };
 

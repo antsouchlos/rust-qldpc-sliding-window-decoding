@@ -1,6 +1,8 @@
 use std::ops::Range;
 
-use crate::decoders::engine::{BpComputeEngine, ParityCheckMatrix};
+use crate::decoders::engine::{
+    AccessEngineInternals, BpComputeEngine, EdgeId, ParityCheckMatrix,
+};
 
 #[derive(Clone)]
 pub struct PhiTable {
@@ -221,6 +223,61 @@ impl BpComputeEngine for SpaComputeEngine {
     }
 }
 
+impl SpaComputeEngine {
+    fn edge_id_to_edge_idx(&self, edge_id: EdgeId) -> usize {
+        let i = (edge_id.0 & 0xFFFF) as usize;
+        let j = (edge_id.0 >> 16) as usize;
+
+        self.state.vn_indices[i]
+            .iter()
+            .find(|&&k| self.state.edges[k].row == j)
+            .expect("Invalid edge id")
+            .clone()
+    }
+}
+
+impl AccessEngineInternals for SpaComputeEngine {
+    fn get_cn_to_vn_msg(
+        &self,
+        edge_id: crate::decoders::engine::EdgeId,
+    ) -> Self::Llr {
+        self.state.edges[self.edge_id_to_edge_idx(edge_id)].msg_cn_to_vn
+    }
+
+    fn get_vn_to_cn_msg(
+        &self,
+        edge_id: crate::decoders::engine::EdgeId,
+    ) -> Self::Llr {
+        self.state.edges[self.edge_id_to_edge_idx(edge_id)].msg_vn_to_cn
+    }
+
+    fn get_channel_llr(&self, i: usize) -> Self::Llr {
+        self.state.channel_llrs[i]
+    }
+
+    fn set_cn_to_vn_msg(
+        &mut self,
+        edge_id: crate::decoders::engine::EdgeId,
+        msg: Self::Llr,
+    ) {
+        let edge_idx = self.edge_id_to_edge_idx(edge_id);
+        self.state.edges[edge_idx].msg_cn_to_vn = msg;
+    }
+
+    fn set_vn_to_cn_msg(
+        &mut self,
+        edge_id: crate::decoders::engine::EdgeId,
+        msg: Self::Llr,
+    ) {
+        let edge_idx = self.edge_id_to_edge_idx(edge_id);
+        self.state.edges[edge_idx].msg_vn_to_cn = msg;
+    }
+
+    fn set_channel_llr(&mut self, i: usize, llr: Self::Llr) {
+        self.state.channel_llrs[i] = llr;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use sprs::{CsMat, TriMat};
@@ -294,7 +351,7 @@ mod tests {
     #[test]
     fn test_vn_update() {
         let h = get_hamming_h();
-        let pcm = ParityCheckMatrix::new(h.clone());
+        let pcm = ParityCheckMatrix::new(&h.clone());
 
         let mut engine = SpaComputeEngine::new(&pcm);
         for edge in &mut engine.state.edges {
@@ -322,7 +379,7 @@ mod tests {
     fn test_cn_update() {
         #[allow(non_snake_case)]
         let h = get_hamming_h();
-        let pcm = ParityCheckMatrix::new(h.clone());
+        let pcm = ParityCheckMatrix::new(&h.clone());
 
         let mut engine = SpaComputeEngine::new(&pcm);
         for edge in &mut engine.state.edges {
@@ -357,7 +414,7 @@ mod tests {
     fn test_total_llrs() {
         #[allow(non_snake_case)]
         let h = get_hamming_h();
-        let pcm = ParityCheckMatrix::new(h.clone());
+        let pcm = ParityCheckMatrix::new(&h.clone());
 
         let channel_llrs = vec![1.0; h.cols()];
         let mut engine = SpaComputeEngine::new(&pcm);
@@ -378,5 +435,53 @@ mod tests {
 
         let expected = vec![2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0];
         assert_eq!(expected, engine.state.total_llrs);
+    }
+
+    #[test]
+    fn test_access_engine_internals() {
+        let h = get_hamming_h();
+
+        let pcm = ParityCheckMatrix { h };
+        let mut engine = SpaComputeEngine::new(&pcm);
+        for (num, edge) in (engine.state.edges).iter_mut().enumerate() {
+            edge.msg_vn_to_cn = (num + 1) as f64;
+            edge.msg_cn_to_vn = (num + 1) as f64 * 10.0;
+        }
+        for i in 0..engine.state.num_vns {
+            engine.set_channel_llr(i, (i + 1) as f64 * 100.0);
+        }
+
+        for (flat_idx, (j, i)) in [
+            (0, 0),
+            (0, 3),
+            (0, 4),
+            (0, 6),
+            (1, 1),
+            (1, 4),
+            (1, 5),
+            (1, 6),
+            (2, 2),
+            (2, 3),
+            (2, 5),
+            (2, 6),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let edge_id = pcm.get_edge_id(*j, *i).unwrap();
+
+            assert_eq!(
+                engine.get_vn_to_cn_msg(edge_id.clone()),
+                (flat_idx as f64 + 1.0)
+            );
+            assert_eq!(
+                engine.get_cn_to_vn_msg(edge_id.clone()),
+                (flat_idx as f64 + 1.0) * 10.0
+            );
+        }
+
+        for i in 0..engine.state.num_vns {
+            assert_eq!(engine.get_channel_llr(i), (i + 1) as f64 * 100.0);
+        }
     }
 }

@@ -9,7 +9,7 @@ use sprs::CsMat;
 /// Type used to index edges corresponding to the one-entries in the sparse
 /// PCM. Avoids the problem of having to ensure (i,j) pairs point to valid PCM
 /// entries
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 pub struct EdgeId(u32);
 
 /// Only contains information about the structure of the code. Is able to
@@ -21,7 +21,7 @@ pub struct ParityCheckMatrix {
 
 // TODO: Rethink if having this makes any sense at all
 impl ParityCheckMatrix {
-    pub fn new(h: CsMat<u8>) -> Self {
+    pub fn new(h: &CsMat<u8>) -> Self {
         Self { h: h.to_csr() }
     }
 
@@ -140,7 +140,7 @@ mod tests {
     #[test]
     fn test_compute_syndrome() {
         let h = get_hamming_h();
-        let pcm = ParityCheckMatrix::new(h);
+        let pcm = ParityCheckMatrix::new(&h);
 
         let e_hat = [1, 0, 0, 0, 0, 0, 0];
         let syndrome = pcm.compute_syndrome(&e_hat);
