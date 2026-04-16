@@ -1,6 +1,7 @@
-pub mod vanilla_bp;
+pub mod bp;
 pub mod bpgd;
-pub mod core;
+pub mod engine;
+pub mod meta;
 
 pub trait Decoder {
     type Settings: Clone;

@@ -1,8 +1,6 @@
 use pyo3::prelude::*;
 
 pub mod decoders;
-pub mod soft_init;
-pub mod windowing;
 
 mod python;
 

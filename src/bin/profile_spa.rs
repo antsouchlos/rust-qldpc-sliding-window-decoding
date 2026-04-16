@@ -1,8 +1,11 @@
 use rust_qldpc::decoders::{
     Decoder,
-    vanilla_bp::{VanillaBpDecoder, VanillaBpSettings},
-    core::{ParityCheckMatrix, spa::SpaComputeEngine},
+    bp::{VanillaBpDecoder, VanillaBpSettings},
+    engine::{ParityCheckMatrix, spa::SpaComputeEngine},
 };
+
+use rust_qldpc::decoders::meta::sliding_window;
+
 use sprs::TriMat;
 
 fn make_ldpc(n: usize) -> sprs::CsMat<u8> {

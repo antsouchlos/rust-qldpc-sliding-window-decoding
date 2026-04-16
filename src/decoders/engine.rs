@@ -9,6 +9,7 @@ use sprs::CsMat;
 /// Type used to index edges corresponding to the one-entries in the sparse
 /// PCM. Avoids the problem of having to ensure (i,j) pairs point to valid PCM
 /// entries
+#[derive(Clone)]
 pub struct EdgeId(u32);
 
 /// Only contains information about the structure of the code. Is able to
@@ -18,6 +19,7 @@ pub struct ParityCheckMatrix {
     h: CsMat<u8>,
 }
 
+// TODO: Rethink if having this makes any sense at all
 impl ParityCheckMatrix {
     pub fn new(h: CsMat<u8>) -> Self {
         Self { h: h.to_csr() }

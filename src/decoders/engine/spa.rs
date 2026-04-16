@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use crate::decoders::core::{BpComputeEngine, ParityCheckMatrix};
+use crate::decoders::engine::{BpComputeEngine, ParityCheckMatrix};
 
 #[derive(Clone)]
 pub struct PhiTable {

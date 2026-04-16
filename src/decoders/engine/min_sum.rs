@@ -1,6 +1,8 @@
 use std::ops::Range;
 
-use crate::decoders::core::{BpComputeEngine, ParityCheckMatrix};
+use crate::decoders::engine::{
+    AccessEngineInternals, BpComputeEngine, EdgeId, ParityCheckMatrix,
+};
 
 #[derive(Clone)]
 pub struct Edge {
@@ -133,15 +135,15 @@ impl BpComputeEngine for MinSumComputeEngine {
             // Combine all incoming messages
 
             self.total_llrs[i] = self.channel_llrs[i];
-            for j in 0..num_neighbors {
-                let idx = self.vn_indices[i][j];
+            for j_idx in 0..num_neighbors {
+                let idx = self.vn_indices[i][j_idx];
                 self.total_llrs[i] += self.edges[idx].msg_cn_to_vn;
             }
 
             // Assign outgoing messages
 
-            for j in 0..num_neighbors {
-                let edge_idx = self.vn_indices[i][j];
+            for j_idx in 0..num_neighbors {
+                let edge_idx = self.vn_indices[i][j_idx];
                 self.edges[edge_idx].msg_vn_to_cn =
                     self.total_llrs[i] - self.edges[edge_idx].msg_cn_to_vn;
             }
@@ -150,6 +152,61 @@ impl BpComputeEngine for MinSumComputeEngine {
 
     fn total_llrs(&self) -> &[Self::Llr] {
         &self.total_llrs
+    }
+}
+
+impl MinSumComputeEngine {
+    fn edge_id_to_edge_idx(&self, edge_id: EdgeId) -> usize {
+        let i = (edge_id.0 >> 16) as usize;
+        let j = (edge_id.0 & 0xFFFF) as usize;
+
+        self.vn_indices[i]
+            .iter()
+            .find(|&&k| self.edges[k].row == j)
+            .expect("Invalid edge id")
+            .clone()
+    }
+}
+
+impl AccessEngineInternals for MinSumComputeEngine {
+    fn get_cn_to_vn_msg(
+        &self,
+        edge_id: crate::decoders::engine::EdgeId,
+    ) -> Self::Llr {
+        self.edges[self.edge_id_to_edge_idx(edge_id)].msg_cn_to_vn
+    }
+
+    fn get_vn_to_cn_msg(
+        &self,
+        edge_id: crate::decoders::engine::EdgeId,
+    ) -> Self::Llr {
+        self.edges[self.edge_id_to_edge_idx(edge_id)].msg_vn_to_cn
+    }
+
+    fn get_channel_llr(&self, i: usize) -> Self::Llr {
+        self.channel_llrs[i]
+    }
+
+    fn set_cn_to_vn_msg(
+        &mut self,
+        edge_id: crate::decoders::engine::EdgeId,
+        msg: Self::Llr,
+    ) {
+        let edge_idx = self.edge_id_to_edge_idx(edge_id);
+        self.edges[edge_idx].msg_cn_to_vn = msg;
+    }
+
+    fn set_vn_to_cn_msg(
+        &mut self,
+        edge_id: crate::decoders::engine::EdgeId,
+        msg: Self::Llr,
+    ) {
+        let edge_idx = self.edge_id_to_edge_idx(edge_id);
+        self.edges[edge_idx].msg_vn_to_cn = msg;
+    }
+
+    fn set_channel_llr(&mut self, i: usize, llr: Self::Llr) {
+        self.channel_llrs[i] = llr;
     }
 }
 
@@ -256,5 +313,53 @@ mod tests {
 
         let expected = vec![2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0];
         assert_eq!(expected, engine.total_llrs);
+    }
+
+    #[test]
+    fn test_access_engine_internals() {
+        let h = get_hamming_h();
+
+        let pcm = ParityCheckMatrix { h };
+        let mut engine = MinSumComputeEngine::new(&pcm);
+        for (num, edge) in (engine.edges).iter_mut().enumerate() {
+            edge.msg_vn_to_cn = (num + 1) as f64;
+            edge.msg_cn_to_vn = (num + 1) as f64 * 10.0;
+        }
+        for i in 0..engine.num_vns {
+            engine.set_channel_llr(i, (i + 1) as f64 * 100.0);
+        }
+
+        for (flat_idx, (i, j)) in [
+            (0, 0),
+            (0, 3),
+            (0, 4),
+            (0, 6),
+            (1, 1),
+            (1, 4),
+            (1, 5),
+            (1, 6),
+            (2, 2),
+            (2, 3),
+            (2, 5),
+            (2, 6),
+        ]
+        .iter()
+        .enumerate()
+        {
+            let edge_id = pcm.get_edge_id(*i, *j).unwrap();
+
+            assert_eq!(
+                engine.get_vn_to_cn_msg(edge_id.clone()),
+                (flat_idx as f64 + 1.0)
+            );
+            assert_eq!(
+                engine.get_cn_to_vn_msg(edge_id.clone()),
+                (flat_idx as f64 + 1.0) * 10.0
+            );
+        }
+
+        for i in 0..engine.num_vns {
+            assert_eq!(engine.get_channel_llr(i), (i + 1) as f64 * 100.0);
+        }
     }
 }

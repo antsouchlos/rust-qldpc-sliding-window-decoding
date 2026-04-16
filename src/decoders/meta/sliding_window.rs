@@ -1,355 +1,226 @@
-// use sprs::{CsMat, DenseVector};
-//
-// use crate::decoders::Decoder;
-// use crate::decoders::bp::SimpleSyndromeBpDecoder;
-// use crate::decoders::bpgd::SyndromeBpGdDecoder;
-// use crate::decoders::core::{Edge, SyndromeBpDecoder, SyndromeBpStrategy};
-// use crate::windowing::{OverlapInfo, split_channel_llrs, split_pcm};
-// use crate::windowing::{get_overlap_info, get_window_borders};
-//
-// #[derive(Clone)]
-// #[allow(non_snake_case)]
-// pub struct Settings {
-//     pub pass_soft_info: bool,
-//     pub F: usize,
-//     pub W: usize,
-// }
-//
-// // TODO: Write this trait in a way where it doesn't depend on the internal
-// // memory representation
-// pub trait SoftInitBpDecoder: SyndromeBpDecoder {
-//     fn get_cn_to_vn_tail(
-//         &self,
-//         start_row: usize,
-//         start_col: usize,
-//     ) -> Vec<Edge>;
-//
-//     fn set_cn_to_vn_head(
-//         &mut self,
-//         msgs: &[Edge],
-//         end_row: usize,
-//         end_col: usize,
-//     );
-//
-//     fn get_channel_llr_tail(&self, start_col: usize) -> Vec<f64>;
-//
-//     fn set_channel_llr_head(&mut self, channel_llrs: &[f64], num_cols: usize);
-// }
-//
-// #[derive(Clone)]
-// #[allow(non_snake_case)]
-// pub struct WindowingSyndromeBpDecoder<InnerDecoder>
-// where
-//     InnerDecoder: SoftInitBpDecoder,
-// {
-//     pub settings: Settings,
-//     pub window_decoders: Vec<InnerDecoder>,
-//     pub window_borders: Vec<((usize, usize), (usize, usize))>,
-//     pub overlap_info: OverlapInfo,
-//     pub win_Hs: Vec<CsMat<u8>>,
-// }
-//
-// #[allow(non_snake_case)]
-// impl<InnerDecoder> WindowingSyndromeBpDecoder<InnerDecoder>
-// where
-//     InnerDecoder: SoftInitBpDecoder,
-// {
-//     pub fn new(
-//         settings: Settings,
-//         inner_settings: <InnerDecoder as Decoder>::Settings,
-//         H: &CsMat<u8>,
-//         m: usize,
-//         num_rounds: usize,
-//         channel_llrs: &[f64],
-//     ) -> Self {
-//         let window_borders =
-//             get_window_borders(&H, m, num_rounds, settings.W, settings.F);
-//
-//         let win_Hs = split_pcm(&H, &window_borders);
-//         let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
-//         let overlap_info = get_overlap_info(&window_borders);
-//
-//         let window_decoders = win_Hs
-//             .iter()
-//             .zip(win_llrs)
-//             .map(|(H, channel_llrs)| {
-//                 InnerDecoder::new(inner_settings.clone(), &H, &channel_llrs)
-//             })
-//             .collect();
-//
-//         Self {
-//             settings,
-//             window_decoders,
-//             window_borders,
-//             overlap_info,
-//             win_Hs,
-//         }
-//     }
-//
-//     pub fn reset(&mut self) {
-//         for decoder in self.window_decoders.iter_mut() {
-//             decoder.reset();
-//         }
-//     }
-// }
-//
-// fn vec_add_inplace(a: &mut [u8], b: &[u8]) {
-//     assert_eq!(a.len(), b.len());
-//
-//     for (x, &y) in a.iter_mut().zip(b.iter()) {
-//         *x ^= y;
-//     }
-// }
-//
-// impl<InnerDdecoder> WindowingSyndromeBpDecoder<InnerDdecoder>
-// where
-//     InnerDdecoder: SoftInitBpDecoder,
-// {
-//     // TODO: Clean this up
-//     #[allow(non_snake_case)]
-//     fn get_next_window_syndrome_diff(
-//         &self,
-//         e_hat: &[u8],
-//         win_idx: usize,
-//     ) -> Vec<u8> {
-//         if win_idx + 1 >= self.window_decoders.len() {
-//             return vec![];
-//         }
-//
-//         let n_committed_cols = self.overlap_info.begin_positions[win_idx].1;
-//         let overlap_row_start = self.overlap_info.begin_positions[win_idx].0;
-//         let n_overlap_rows = self.overlap_info.end_positions[win_idx].0 + 1;
-//
-//         let next_win = &self.window_borders[win_idx + 1];
-//         let n_rows_next = next_win.1.0 - next_win.0.0 + 1;
-//
-//         let mut s_diff = vec![0u8; n_rows_next];
-//
-//         let win_H = &self.win_Hs[win_idx];
-//         for local_row in overlap_row_start..overlap_row_start + n_overlap_rows {
-//             let row_vec = win_H.outer_view(local_row).unwrap();
-//             let mut val = 0u8;
-//             for (col, &h) in row_vec.iter() {
-//                 if col < n_committed_cols && h != 0 {
-//                     val ^= e_hat[col];
-//                 }
-//             }
-//             s_diff[local_row - overlap_row_start] = val;
-//         }
-//
-//         s_diff
-//     }
-//
-//     fn get_commited_e_hat<'a>(
-//         &self,
-//         e_hat: &'a [u8],
-//         win_idx: usize,
-//     ) -> &'a [u8] {
-//         let end_idx = if win_idx < self.window_decoders.len() - 1 {
-//             self.overlap_info.begin_positions[win_idx].1
-//         } else {
-//             e_hat.len()
-//         };
-//
-//         &e_hat[0..end_idx]
-//     }
-//
-//     fn cut_out_current_window_syndrome(
-//         &self,
-//         s: &[u8],
-//         win_idx: usize,
-//     ) -> Vec<u8> {
-//         let (row_begin, _) = self.window_borders[win_idx].0;
-//         let (row_end, _) = self.window_borders[win_idx].1;
-//
-//         s[row_begin..=row_end].to_vec()
-//     }
-//
-//     fn get_soft_info_from_previous_window(&mut self, win_idx: usize) {
-//         assert!(win_idx >= 1);
-//
-//         let prev_win_overlap_start =
-//             self.overlap_info.begin_positions[win_idx - 1];
-//         let curr_win_overlap_end = self.overlap_info.end_positions[win_idx - 1];
-//
-//         let prev_cn_to_vn_msgs = self.window_decoders[win_idx - 1]
-//             .get_cn_to_vn_tail(
-//                 prev_win_overlap_start.0,
-//                 prev_win_overlap_start.1,
-//             );
-//         // let prev_channel_llrs = self.window_decoders[win_idx - 1]
-//         //     .get_channel_llr_tail(prev_win_overlap_start.1);
-//
-//         self.window_decoders[win_idx].set_cn_to_vn_head(
-//             &prev_cn_to_vn_msgs,
-//             curr_win_overlap_end.0 + 1,
-//             curr_win_overlap_end.1 + 1,
-//         );
-//         // self.window_decoders[win_idx].set_channel_llr_head(
-//         //     &prev_channel_llrs,
-//         //     curr_win_overlap_end.1 + 1,
-//         // );
-//     }
-// }
-//
-// impl<InnerDecoder> Decoder for WindowingSyndromeBpDecoder<InnerDecoder>
-// where
-//     InnerDecoder: SoftInitBpDecoder,
-// {
-//     type Settings = Settings;
-//
-//     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
-//         let mut e_hat_total = Vec::<u8>::new();
-//         let mut s_diff = Vec::<u8>::zeros(self.window_borders[0].1.0 + 1);
-//
-//         for win_idx in 0..self.window_decoders.len() {
-//             let mut s_win = self.cut_out_current_window_syndrome(&s, win_idx);
-//             vec_add_inplace(&mut s_win, &s_diff);
-//
-//             if self.settings.pass_soft_info && win_idx >= 1 {
-//                 self.get_soft_info_from_previous_window(win_idx);
-//             }
-//
-//             let e_hat = self.window_decoders[win_idx].decode(&s_win);
-//
-//             e_hat_total.extend(self.get_commited_e_hat(&e_hat, win_idx).iter());
-//             s_diff = self.get_next_window_syndrome_diff(&e_hat, win_idx);
-//         }
-//
-//         e_hat_total
-//     }
-// }
-//
-// impl<Core: SyndromeBpStrategy> SoftInitBpDecoder
-//     for SimpleSyndromeBpDecoder<Core>
-// {
-//     fn get_cn_to_vn_tail(
-//         &self,
-//         start_row: usize,
-//         start_col: usize,
-//     ) -> Vec<Edge> {
-//         self.core
-//             .get_state_ref()
-//             .edges
-//             .iter()
-//             .filter(|e| e.row >= start_row && e.col >= start_col)
-//             .map(|e| Edge {
-//                 row: e.row - start_row,
-//                 col: e.col - start_col,
-//                 msg_vn_to_cn: 0.0,
-//                 msg_cn_to_vn: e.msg_cn_to_vn,
-//             })
-//             .collect()
-//     }
-//
-//     fn set_cn_to_vn_head(
-//         &mut self,
-//         msgs: &[Edge],
-//         num_rows: usize,
-//         num_cols: usize,
-//     ) {
-//         assert!(msgs.iter().all(|e| e.row < num_rows && e.col < num_cols));
-//
-//         // Two-pointer merge: both edge lists are in (row, col) sorted CSR order.
-//         let mut msg_iter = msgs.iter().peekable();
-//         for edge in self.core.get_state().edges.iter_mut() {
-//             if edge.row >= num_rows || edge.col >= num_cols {
-//                 continue;
-//             }
-//             // Advance msg_iter past entries that sort before this edge.
-//             loop {
-//                 match msg_iter.peek() {
-//                     Some(m) if (m.row, m.col) < (edge.row, edge.col) => {
-//                         msg_iter.next();
-//                     }
-//                     _ => break,
-//                 }
-//             }
-//             if let Some(m) = msg_iter.peek() {
-//                 if m.row == edge.row && m.col == edge.col {
-//                     edge.msg_cn_to_vn = m.msg_cn_to_vn;
-//                 }
-//             }
-//         }
-//     }
-//
-//     fn get_channel_llr_tail(&self, start_col: usize) -> Vec<f64> {
-//         self.core.get_state_ref().channel_llrs[start_col..].to_vec()
-//     }
-//
-//     fn set_channel_llr_head(&mut self, channel_llrs: &[f64], num_cols: usize) {
-//         assert!(num_cols <= self.core.get_state_ref().channel_llrs.len());
-//
-//         for i in 0..num_cols {
-//             self.core.get_state().channel_llrs[i] = channel_llrs[i];
-//         }
-//     }
-// }
-//
-// impl<Core: SyndromeBpStrategy> SoftInitBpDecoder for SyndromeBpGdDecoder<Core> {
-//     fn get_cn_to_vn_tail(
-//         &self,
-//         start_row: usize,
-//         start_col: usize,
-//     ) -> Vec<Edge> {
-//         self.core
-//             .get_state_ref()
-//             .edges
-//             .iter()
-//             .filter(|e| e.row >= start_row && e.col >= start_col)
-//             .map(|e| Edge {
-//                 row: e.row - start_row,
-//                 col: e.col - start_col,
-//                 msg_vn_to_cn: 0.0,
-//                 msg_cn_to_vn: e.msg_cn_to_vn,
-//             })
-//             .collect()
-//     }
-//
-//     fn set_cn_to_vn_head(
-//         &mut self,
-//         msgs: &[Edge],
-//         num_rows: usize,
-//         num_cols: usize,
-//     ) {
-//         assert!(msgs.iter().all(|e| e.row < num_rows && e.col < num_cols));
-//
-//         // Two-pointer merge: both edge lists are in (row, col) sorted CSR order.
-//         let mut msg_iter = msgs.iter().peekable();
-//         for edge in self.core.get_state().edges.iter_mut() {
-//             if edge.row >= num_rows || edge.col >= num_cols {
-//                 continue;
-//             }
-//             // Advance msg_iter past entries that sort before this edge.
-//             loop {
-//                 match msg_iter.peek() {
-//                     Some(m) if (m.row, m.col) < (edge.row, edge.col) => {
-//                         msg_iter.next();
-//                     }
-//                     _ => break,
-//                 }
-//             }
-//             if let Some(m) = msg_iter.peek() {
-//                 if m.row == edge.row && m.col == edge.col {
-//                     edge.msg_cn_to_vn = m.msg_cn_to_vn;
-//                 }
-//             }
-//         }
-//     }
-//
-//     fn get_channel_llr_tail(&self, start_col: usize) -> Vec<f64> {
-//         self.core.get_state_ref().channel_llrs[start_col..].to_vec()
-//     }
-//
-//     fn set_channel_llr_head(&mut self, channel_llrs: &[f64], num_cols: usize) {
-//         assert!(num_cols <= self.core.get_state_ref().channel_llrs.len());
-//
-//         for i in 0..num_cols {
-//             self.core.get_state().channel_llrs[i] = channel_llrs[i];
-//         }
-//     }
-// }
-//
+use num_traits::Float;
+use sprs::{CsMat, DenseVector};
+
+use crate::decoders::{
+    Decoder,
+    engine::{EdgeId, ParityCheckMatrix},
+    meta::split_windows::{
+        OverlapInfo, get_overlap_info, get_window_borders, split_channel_llrs,
+        split_pcm,
+    },
+};
+
+#[derive(Clone)]
+#[allow(non_snake_case)]
+pub struct Settings {
+    pub pass_soft_info: bool,
+    pub F: usize,
+    pub W: usize,
+}
+
+pub trait InnerWindowDecoder: Decoder {
+    type Llr: Copy;
+
+    fn new(
+        settings: Self::Settings,
+        pcm: &ParityCheckMatrix,
+        channel_llrs: &[Self::Llr],
+    ) -> Self;
+
+    fn get_cn_to_vn_msg(&self, edge_id: EdgeId) -> Self::Llr;
+    fn get_vn_to_cn_msg(&self, edge_id: EdgeId) -> Self::Llr;
+    fn get_channel_llr(&self, i: usize) -> Self::Llr;
+
+    fn set_cn_to_vn_msg(&mut self, edge_id: EdgeId, msg: Self::Llr);
+    fn set_vn_to_cn_msg(&mut self, edge_id: EdgeId, msg: Self::Llr);
+    fn set_channel_llr(&mut self, i: usize, llr: Self::Llr);
+
+    fn reset(&mut self);
+}
+
+#[derive(Clone)]
+#[allow(non_snake_case)]
+pub struct SlidingWindowDecoder<InnerDecoder>
+where
+    InnerDecoder: InnerWindowDecoder,
+{
+    settings: Settings,
+    window_decoders: Vec<InnerDecoder>,
+    window_borders: Vec<((usize, usize), (usize, usize))>,
+    overlap_info: OverlapInfo,
+    win_pcms: Vec<ParityCheckMatrix>,
+    e_hat_total: Vec<u8>,
+}
+
+#[allow(non_snake_case)]
+impl<InnerDecoder> SlidingWindowDecoder<InnerDecoder>
+where
+    InnerDecoder: InnerWindowDecoder,
+    InnerDecoder::Llr: Float,
+{
+    pub fn new(
+        settings: Settings,
+        inner_settings: <InnerDecoder as Decoder>::Settings,
+        H: &CsMat<u8>,
+        m: usize,
+        num_rounds: usize,
+        channel_llrs: &[InnerDecoder::Llr],
+    ) -> Self {
+        let window_borders =
+            get_window_borders(&H, m, num_rounds, settings.W, settings.F);
+
+        let win_hs = split_pcm(&H, &window_borders);
+        let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
+        let overlap_info = get_overlap_info(&window_borders);
+
+        let mut win_pcms =
+            Vec::<ParityCheckMatrix>::with_capacity(win_hs.len());
+        for win_h in win_hs {
+            let pcm = ParityCheckMatrix::new(win_h);
+            win_pcms.push(pcm);
+        }
+
+        let window_decoders = win_pcms
+            .iter()
+            .zip(win_llrs)
+            .map(|(pcm, channel_llrs)| {
+                InnerDecoder::new(inner_settings.clone(), &pcm, &channel_llrs)
+            })
+            .collect();
+
+        Self {
+            e_hat_total: Vec::<u8>::with_capacity(H.cols()),
+            settings,
+            window_decoders,
+            window_borders,
+            overlap_info,
+            win_pcms: win_pcms,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.e_hat_total.clear();
+        for decoder in self.window_decoders.iter_mut() {
+            decoder.reset();
+        }
+    }
+}
+
+fn vec_add_inplace(a: &mut [u8], b: &[u8]) {
+    assert_eq!(a.len(), b.len());
+
+    for (x, &y) in a.iter_mut().zip(b.iter()) {
+        *x ^= y;
+    }
+}
+
+impl<InnerDecoder> SlidingWindowDecoder<InnerDecoder>
+where
+    InnerDecoder: InnerWindowDecoder,
+{
+    #[allow(non_snake_case)]
+    fn get_next_window_syndrome_diff(
+        &self,
+        e_hat: &[u8],
+        win_idx: usize,
+    ) -> Vec<u8> {
+        if win_idx + 1 >= self.window_decoders.len() {
+            return vec![];
+        }
+
+        let s = self.win_pcms[win_idx].compute_syndrome(e_hat);
+        s[self.overlap_info.begin_positions[win_idx].0
+            ..=self.overlap_info.end_positions[win_idx].0]
+            .to_vec()
+    }
+
+    fn get_commited_e_hat<'a>(
+        &self,
+        e_hat: &'a [u8],
+        win_idx: usize,
+    ) -> &'a [u8] {
+        let end_idx = if win_idx < self.window_decoders.len() - 1 {
+            self.overlap_info.begin_positions[win_idx].1
+        } else {
+            e_hat.len()
+        };
+
+        &e_hat[0..end_idx]
+    }
+
+    fn cut_out_current_window_syndrome(
+        &self,
+        s: &[u8],
+        win_idx: usize,
+    ) -> Vec<u8> {
+        let (row_begin, _) = self.window_borders[win_idx].0;
+        let (row_end, _) = self.window_borders[win_idx].1;
+
+        s[row_begin..=row_end].to_vec()
+    }
+
+    fn transfer_soft_info_from_previous_window(&mut self, win_idx: usize) {
+        assert!(win_idx >= 1);
+
+        let prev_win_overlap_start =
+            self.overlap_info.begin_positions[win_idx - 1];
+        let curr_win_overlap_end = self.overlap_info.end_positions[win_idx - 1];
+
+        let pcm1 = &self.win_pcms[win_idx - 1];
+        let pcm2 = &self.win_pcms[win_idx];
+
+        let prev_win_rows = prev_win_overlap_start.0..;
+        let prev_win_cols = prev_win_overlap_start.1..;
+        let src_edges = pcm1.slice(&prev_win_rows, &prev_win_cols);
+
+        let curr_win_rows = ..=curr_win_overlap_end.0;
+        let curr_win_cols = ..=curr_win_overlap_end.1;
+        let dest_edges = pcm2.slice(&curr_win_rows, &curr_win_cols);
+
+        for (e_src, e_dst) in src_edges.zip(dest_edges) {
+            let msg = self.window_decoders[win_idx - 1].get_cn_to_vn_msg(e_src);
+            self.window_decoders[win_idx].set_cn_to_vn_msg(e_dst, msg);
+        }
+
+        // let prev_channel_llrs = self.window_decoders[win_idx - 1]
+        //     .get_channel_llr_tail(prev_win_overlap_start.1);
+        //
+        // self.window_decoders[win_idx].set_channel_llr_head(
+        //     &prev_channel_llrs,
+        //     curr_win_overlap_end.1 + 1,
+        // );
+    }
+}
+
+impl<InnerDecoder> Decoder for SlidingWindowDecoder<InnerDecoder>
+where
+    InnerDecoder: InnerWindowDecoder,
+{
+    type Settings = Settings;
+
+    fn decode(&mut self, s: &[u8]) -> &[u8] {
+        let mut s_diff = Vec::<u8>::zeros(self.window_borders[0].1.0 + 1);
+
+        for win_idx in 0..self.window_decoders.len() {
+            let mut s_win = self.cut_out_current_window_syndrome(&s, win_idx);
+            vec_add_inplace(&mut s_win, &s_diff);
+
+            if self.settings.pass_soft_info && win_idx >= 1 {
+                self.transfer_soft_info_from_previous_window(win_idx);
+            }
+
+            let e_hat: Vec<u8> =
+                self.window_decoders[win_idx].decode(&s_win).to_vec();
+
+            self.e_hat_total
+                .extend(self.get_commited_e_hat(&e_hat, win_idx).iter());
+            s_diff = self.get_next_window_syndrome_diff(&e_hat, win_idx);
+        }
+
+        &self.e_hat_total
+    }
+}
+
 // #[cfg(test)]
 // mod tests {
 //     use super::*;
