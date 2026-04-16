@@ -12,6 +12,7 @@ pub struct Edge {
     pub msg_cn_to_vn: f64,
 }
 
+#[derive(Clone)]
 pub struct MinSumComputeEngine {
     pub edges: Vec<Edge>,
     pub cn_ranges: Vec<Range<usize>>,

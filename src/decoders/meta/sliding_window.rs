@@ -12,8 +12,8 @@ use crate::decoders::{
 
 #[derive(Clone)]
 #[allow(non_snake_case)]
-pub struct Settings {
-    pub pass_soft_info: bool,
+pub struct SlidingWindowSettings {
+    pub warm_start: bool,
     pub F: usize,
     pub W: usize,
 }
@@ -44,7 +44,7 @@ pub struct SlidingWindowDecoder<InnerDecoder>
 where
     InnerDecoder: InnerWindowDecoder,
 {
-    settings: Settings,
+    settings: SlidingWindowSettings,
     window_decoders: Vec<InnerDecoder>,
     window_borders: Vec<((usize, usize), (usize, usize))>,
     overlap_info: OverlapInfo,
@@ -59,7 +59,7 @@ where
     InnerDecoder::Llr: Float,
 {
     pub fn new(
-        settings: Settings,
+        settings: SlidingWindowSettings,
         inner_settings: <InnerDecoder as Decoder>::Settings,
         H: &CsMat<u8>,
         m: usize,
@@ -200,7 +200,7 @@ impl<InnerDecoder> Decoder for SlidingWindowDecoder<InnerDecoder>
 where
     InnerDecoder: InnerWindowDecoder,
 {
-    type Settings = Settings;
+    type Settings = SlidingWindowSettings;
 
     fn decode(&mut self, s: &[u8]) -> &[u8] {
         let mut s_diff = Vec::<u8>::zeros(self.window_borders[0].1.0 + 1);
@@ -209,7 +209,7 @@ where
             let mut s_win = self.cut_out_current_window_syndrome(&s, win_idx);
             vec_add_inplace(&mut s_win, &s_diff);
 
-            if self.settings.pass_soft_info && win_idx >= 1 {
+            if self.settings.warm_start && win_idx >= 1 {
                 self.transfer_soft_info_from_previous_window(win_idx);
             }
 
@@ -342,8 +342,8 @@ mod tests {
 
         let decoder =
             SlidingWindowDecoder::<VanillaBpDecoder<MinSumComputeEngine>>::new(
-                Settings {
-                    pass_soft_info: false,
+                SlidingWindowSettings {
+                    warm_start: false,
                     F: 2,
                     W: 3,
                 },
@@ -419,8 +419,8 @@ mod tests {
 
         let mut decoder =
             SlidingWindowDecoder::<VanillaBpDecoder<MinSumComputeEngine>>::new(
-                Settings {
-                    pass_soft_info: false,
+                SlidingWindowSettings {
+                    warm_start: false,
                     F: 2,
                     W: 3,
                 },

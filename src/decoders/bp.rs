@@ -11,6 +11,7 @@ pub struct VanillaBpSettings {
     pub max_iter: usize,
 }
 
+#[derive(Clone)]
 pub struct VanillaBpDecoder<Engine: BpComputeEngine> {
     settings: VanillaBpSettings,
     pcm: ParityCheckMatrix,
