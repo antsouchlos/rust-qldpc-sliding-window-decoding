@@ -47,14 +47,14 @@ impl ParityCheckMatrix {
             })
     }
 
-    pub fn get_edge_id(&self, i: usize, j: usize) -> Option<EdgeId> {
+    pub fn get_edge_id(&self, j: usize, i: usize) -> Option<EdgeId> {
         assert!(
-            i < (1 << 16) && j < (1 << 16),
+            j < (1 << 16) && i < (1 << 16),
             "i and j must be less than 65536"
         );
 
-        if self.h.get(i, j).is_some() {
-            Some(EdgeId((i as u32) << 16 | (j as u32)))
+        if self.h.get(j, i).is_some() {
+            Some(EdgeId((j as u32) << 16 | (i as u32)))
         } else {
             None
         }

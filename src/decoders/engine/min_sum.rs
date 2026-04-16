@@ -157,8 +157,8 @@ impl BpComputeEngine for MinSumComputeEngine {
 
 impl MinSumComputeEngine {
     fn edge_id_to_edge_idx(&self, edge_id: EdgeId) -> usize {
-        let i = (edge_id.0 >> 16) as usize;
-        let j = (edge_id.0 & 0xFFFF) as usize;
+        let i = (edge_id.0 & 0xFFFF) as usize;
+        let j = (edge_id.0 >> 16) as usize;
 
         self.vn_indices[i]
             .iter()
@@ -329,7 +329,7 @@ mod tests {
             engine.set_channel_llr(i, (i + 1) as f64 * 100.0);
         }
 
-        for (flat_idx, (i, j)) in [
+        for (flat_idx, (j, i)) in [
             (0, 0),
             (0, 3),
             (0, 4),
@@ -346,7 +346,7 @@ mod tests {
         .iter()
         .enumerate()
         {
-            let edge_id = pcm.get_edge_id(*i, *j).unwrap();
+            let edge_id = pcm.get_edge_id(*j, *i).unwrap();
 
             assert_eq!(
                 engine.get_vn_to_cn_msg(edge_id.clone()),
