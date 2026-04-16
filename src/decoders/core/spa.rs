@@ -1,5 +1,6 @@
-use crate::decoders::core::{Edge, SyndromeBpCore, SyndromeBpStrategy};
-use sprs::CsMat;
+use std::ops::Range;
+
+use crate::decoders::core::{BpComputeEngine, ParityCheckMatrix};
 
 #[derive(Clone)]
 pub struct PhiTable {
@@ -59,26 +60,46 @@ impl Default for PhiTable {
 }
 
 #[derive(Clone)]
+pub struct Edge {
+    pub row: usize,
+    pub col: usize,
+    pub msg_vn_to_cn: f64,
+    pub msg_cn_to_vn: f64,
+}
+
+#[derive(Clone)]
+struct State {
+    edges: Vec<Edge>,
+    cn_ranges: Vec<Range<usize>>,
+    vn_indices: Vec<Vec<usize>>,
+    channel_llrs: Vec<f64>,
+    total_llrs: Vec<f64>,
+    num_vns: usize,
+    num_cns: usize,
+}
+
+#[derive(Clone)]
 #[allow(non_snake_case)]
-pub struct SyndromeSpaCore {
-    state: SyndromeBpCore,
+pub struct SpaComputeEngine {
+    state: State,
     /// Lookup table used instead of computing tanh and arctanh directly
     phi_table: PhiTable,
     /// VN->CN messages are clipped to [-K,+K]
     K: f64,
 }
 
-// TODO: Don't hardcode clipping value
-impl SyndromeBpStrategy for SyndromeSpaCore {
-    #[allow(non_snake_case)]
-    fn new(H: &CsMat<u8>, channel_llrs: &[f64]) -> Self {
-        let H_csr = H.to_csr();
-        let num_cns = H_csr.rows();
-        let num_vns = H_csr.cols();
-        let nnz = H_csr.nnz();
+impl BpComputeEngine for SpaComputeEngine {
+    type Llr = f64;
+
+    // TODO: Get rid of magic number
+    fn new(pcm: &ParityCheckMatrix) -> Self {
+        let h_csr = pcm.h.to_csr();
+        let num_cns = h_csr.rows();
+        let num_vns = h_csr.cols();
+        let nnz = h_csr.nnz();
 
         let mut edges = Vec::with_capacity(nnz);
-        for (row, row_vec) in H_csr.outer_iterator().enumerate() {
+        for (row, row_vec) in h_csr.outer_iterator().enumerate() {
             for (col, _) in row_vec.iter() {
                 edges.push(Edge {
                     row,
@@ -91,8 +112,8 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
 
         let mut cn_ranges = Vec::with_capacity(num_cns);
         for j in 0..num_cns {
-            let start = H_csr.indptr().index(j);
-            let end = H_csr.indptr().index(j + 1);
+            let start = pcm.h.indptr().index(j);
+            let end = pcm.h.indptr().index(j + 1);
             cn_ranges.push(start..end);
         }
 
@@ -102,11 +123,11 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
         }
 
         Self {
-            state: SyndromeBpCore {
+            state: State {
                 edges,
                 cn_ranges,
                 vn_indices,
-                channel_llrs: channel_llrs.to_vec(),
+                channel_llrs: vec![0.0; num_vns],
                 total_llrs: vec![0.0; num_vns],
                 num_vns,
                 num_cns,
@@ -116,31 +137,14 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
         }
     }
 
-    /// Perform variable node update [1].
-    ///
-    /// [1] H. Yao et al., "Belief Propagation Decoding of Quantum LDPC Codes
-    ///     with Guided Decimation," arXiv:2312.10950, 2024.
-    fn vn_update(&mut self) {
-        for i in 0..self.state.num_vns {
-            let num_neighbors = self.state.vn_indices[i].len();
+    fn set_channel_llrs(&mut self, llrs: &[Self::Llr]) {
+        self.state.channel_llrs.copy_from_slice(llrs);
+    }
 
-            // Combine all incoming messages
-
-            let mut total = self.state.channel_llrs[i];
-            for j in 0..num_neighbors {
-                let edge_idx = self.state.vn_indices[i][j];
-                total += self.state.edges[edge_idx].msg_cn_to_vn;
-            }
-
-            // Assign outgoing messages
-
-            for j in 0..num_neighbors {
-                let edge_idx = self.state.vn_indices[i][j];
-                let msg = total - self.state.edges[edge_idx].msg_cn_to_vn;
-
-                self.state.edges[edge_idx].msg_vn_to_cn =
-                    msg.clamp(-self.K, self.K);
-            }
+    fn reset(&mut self) {
+        for edge in self.state.edges.iter_mut() {
+            edge.msg_vn_to_cn = 0.0;
+            edge.msg_cn_to_vn = 0.0;
         }
     }
 
@@ -182,31 +186,44 @@ impl SyndromeBpStrategy for SyndromeSpaCore {
         }
     }
 
-    fn total_llrs(&mut self) {
+    /// Perform variable node update [1].
+    ///
+    /// [1] H. Yao et al., "Belief Propagation Decoding of Quantum LDPC Codes
+    ///     with Guided Decimation," arXiv:2312.10950, 2024.
+    fn vn_update(&mut self) {
         for i in 0..self.state.num_vns {
-            self.state.total_llrs[i] = self.state.channel_llrs[i];
-
             let num_neighbors = self.state.vn_indices[i].len();
+
+            // Combine all incoming messages
+
+            self.state.total_llrs[i] = self.state.channel_llrs[i];
             for j in 0..num_neighbors {
                 let edge_idx = self.state.vn_indices[i][j];
                 self.state.total_llrs[i] +=
                     self.state.edges[edge_idx].msg_cn_to_vn;
             }
+
+            // Assign outgoing messages
+
+            for j in 0..num_neighbors {
+                let edge_idx = self.state.vn_indices[i][j];
+                let msg = self.state.total_llrs[i]
+                    - self.state.edges[edge_idx].msg_cn_to_vn;
+
+                self.state.edges[edge_idx].msg_vn_to_cn =
+                    msg.clamp(-self.K, self.K);
+            }
         }
     }
 
-    fn get_state(&mut self) -> &mut SyndromeBpCore {
-        &mut self.state
-    }
-
-    fn get_state_ref(&self) -> &SyndromeBpCore {
-        &self.state
+    fn total_llrs(&self) -> &[Self::Llr] {
+        &self.state.total_llrs
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use sprs::TriMat;
+    use sprs::{CsMat, TriMat};
 
     use super::*;
 
@@ -255,39 +272,36 @@ mod tests {
         assert_eq!(table.lookup(100.0), 0.0);
     }
 
-    #[allow(non_snake_case)]
-    fn get_hamming_H() -> CsMat<u8> {
-        #[allow(non_snake_case)]
-        let mut H = TriMat::<u8>::new((3, 7));
+    fn get_hamming_h() -> CsMat<u8> {
+        let mut h = TriMat::<u8>::new((3, 7));
 
-        H.add_triplet(0, 0, 1);
-        H.add_triplet(1, 1, 1);
-        H.add_triplet(2, 2, 1);
-        H.add_triplet(0, 3, 1);
-        H.add_triplet(2, 3, 1);
-        H.add_triplet(0, 4, 1);
-        H.add_triplet(1, 4, 1);
-        H.add_triplet(1, 5, 1);
-        H.add_triplet(2, 5, 1);
-        H.add_triplet(0, 6, 1);
-        H.add_triplet(1, 6, 1);
-        H.add_triplet(2, 6, 1);
+        h.add_triplet(0, 0, 1);
+        h.add_triplet(1, 1, 1);
+        h.add_triplet(2, 2, 1);
+        h.add_triplet(0, 3, 1);
+        h.add_triplet(2, 3, 1);
+        h.add_triplet(0, 4, 1);
+        h.add_triplet(1, 4, 1);
+        h.add_triplet(1, 5, 1);
+        h.add_triplet(2, 5, 1);
+        h.add_triplet(0, 6, 1);
+        h.add_triplet(1, 6, 1);
+        h.add_triplet(2, 6, 1);
 
-        H.to_csr()
+        h.to_csr()
     }
 
     #[test]
     fn test_vn_update() {
-        #[allow(non_snake_case)]
-        let H = get_hamming_H();
+        let h = get_hamming_h();
+        let pcm = ParityCheckMatrix::new(h.clone());
 
-        let channel_llrs = vec![0.0; H.cols()];
-        let mut decoder = SyndromeSpaCore::new(&H, &channel_llrs);
-        for edge in &mut decoder.state.edges {
+        let mut engine = SpaComputeEngine::new(&pcm);
+        for edge in &mut engine.state.edges {
             edge.msg_cn_to_vn = 1.0;
         }
 
-        decoder.vn_update();
+        engine.vn_update();
 
         //     1 0 0 1 1 0 1
         // H = 0 1 0 0 1 1 1
@@ -300,23 +314,23 @@ mod tests {
         let expected =
             vec![0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0];
         let got: Vec<f64> =
-            decoder.state.edges.iter().map(|e| e.msg_vn_to_cn).collect();
+            engine.state.edges.iter().map(|e| e.msg_vn_to_cn).collect();
         assert_eq!(expected, got);
     }
 
     #[test]
     fn test_cn_update() {
         #[allow(non_snake_case)]
-        let H = get_hamming_H();
+        let h = get_hamming_h();
+        let pcm = ParityCheckMatrix::new(h.clone());
 
-        let channel_llrs = vec![0.0; H.cols()];
-        let mut decoder = SyndromeSpaCore::new(&H, &channel_llrs);
-        for edge in &mut decoder.state.edges {
+        let mut engine = SpaComputeEngine::new(&pcm);
+        for edge in &mut engine.state.edges {
             edge.msg_vn_to_cn = 1.0;
         }
 
         let s = vec![0, 1, 0];
-        decoder.cn_update(&s);
+        engine.cn_update(&s);
 
         //     1 0 0 1 1 0 1
         // H = 0 1 0 0 1 1 1
@@ -331,7 +345,7 @@ mod tests {
         let expected = vec![v, v, v, v, -v, -v, -v, -v, v, v, v, v];
 
         let got: Vec<f64> =
-            decoder.state.edges.iter().map(|e| e.msg_cn_to_vn).collect();
+            engine.state.edges.iter().map(|e| e.msg_cn_to_vn).collect();
 
         assert_eq!(expected.len(), got.len());
         for (a, b) in expected.iter().zip(got.iter()) {
@@ -342,15 +356,17 @@ mod tests {
     #[test]
     fn test_total_llrs() {
         #[allow(non_snake_case)]
-        let H = get_hamming_H();
+        let h = get_hamming_h();
+        let pcm = ParityCheckMatrix::new(h.clone());
 
-        let channel_llrs = vec![1.0; H.cols()];
-        let mut decoder = SyndromeSpaCore::new(&H, &channel_llrs);
-        for edge in &mut decoder.state.edges {
+        let channel_llrs = vec![1.0; h.cols()];
+        let mut engine = SpaComputeEngine::new(&pcm);
+        engine.set_channel_llrs(&channel_llrs);
+        for edge in &mut engine.state.edges {
             edge.msg_cn_to_vn = 1.0;
         }
 
-        decoder.total_llrs();
+        engine.vn_update();
 
         //     1 0 0 1 1 0 1
         // H = 0 1 0 0 1 1 1
@@ -361,6 +377,6 @@ mod tests {
         //            0 0 1 1 0 1 1
 
         let expected = vec![2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0];
-        assert_eq!(expected, decoder.state.total_llrs);
+        assert_eq!(expected, engine.state.total_llrs);
     }
 }

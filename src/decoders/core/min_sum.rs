@@ -1,19 +1,36 @@
-use crate::decoders::core::{Edge, SyndromeBpCore, SyndromeBpStrategy};
-use sprs::CsMat;
+use std::ops::Range;
+
+use crate::decoders::core::{BpComputeEngine, ParityCheckMatrix};
 
 #[derive(Clone)]
-pub struct SyndromeMinSumCore(pub SyndromeBpCore);
+pub struct Edge {
+    pub row: usize,
+    pub col: usize,
+    pub msg_vn_to_cn: f64,
+    pub msg_cn_to_vn: f64,
+}
 
-impl SyndromeBpStrategy for SyndromeMinSumCore {
-    #[allow(non_snake_case)]
-    fn new(H: &CsMat<u8>, channel_llrs: &[f64]) -> Self {
-        let H_csr = H.to_csr();
-        let num_cns = H_csr.rows();
-        let num_vns = H_csr.cols();
-        let nnz = H_csr.nnz();
+pub struct MinSumComputeEngine {
+    pub edges: Vec<Edge>,
+    pub cn_ranges: Vec<Range<usize>>,
+    pub vn_indices: Vec<Vec<usize>>,
+    pub channel_llrs: Vec<f64>,
+    pub total_llrs: Vec<f64>,
+    pub num_vns: usize,
+    pub num_cns: usize,
+}
+
+impl BpComputeEngine for MinSumComputeEngine {
+    type Llr = f64;
+
+    fn new(pcm: &ParityCheckMatrix) -> Self {
+        let h_csr = pcm.h.to_csr();
+        let num_cns = h_csr.rows();
+        let num_vns = h_csr.cols();
+        let nnz = h_csr.nnz();
 
         let mut edges = Vec::with_capacity(nnz);
-        for (row, row_vec) in H_csr.outer_iterator().enumerate() {
+        for (row, row_vec) in h_csr.outer_iterator().enumerate() {
             for (col, _) in row_vec.iter() {
                 edges.push(Edge {
                     row,
@@ -26,8 +43,8 @@ impl SyndromeBpStrategy for SyndromeMinSumCore {
 
         let mut cn_ranges = Vec::with_capacity(num_cns);
         for j in 0..num_cns {
-            let start = H_csr.indptr().index(j);
-            let end = H_csr.indptr().index(j + 1);
+            let start = pcm.h.indptr().index(j);
+            let end = pcm.h.indptr().index(j + 1);
             cn_ranges.push(start..end);
         }
 
@@ -36,40 +53,25 @@ impl SyndromeBpStrategy for SyndromeMinSumCore {
             vn_indices[edge.col].push(k);
         }
 
-        Self(SyndromeBpCore {
+        Self {
             edges,
             cn_ranges,
             vn_indices,
-            channel_llrs: channel_llrs.to_vec(),
+            channel_llrs: vec![0.0; num_vns],
             total_llrs: vec![0.0; num_vns],
             num_vns,
             num_cns,
-        })
+        }
     }
 
-    /// Perform variable node update [1].
-    ///
-    /// [1] H. Yao et al., "Belief Propagation Decoding of Quantum LDPC Codes
-    ///     with Guided Decimation," arXiv:2312.10950, 2024.
-    fn vn_update(&mut self) {
-        for i in 0..self.0.num_vns {
-            let num_neighbors = self.0.vn_indices[i].len();
+    fn set_channel_llrs(&mut self, llrs: &[Self::Llr]) {
+        self.channel_llrs.copy_from_slice(llrs);
+    }
 
-            // Combine all incoming messages
-
-            let mut total = self.0.channel_llrs[i];
-            for j in 0..num_neighbors {
-                let idx = self.0.vn_indices[i][j];
-                total += self.0.edges[idx].msg_cn_to_vn;
-            }
-
-            // Assign outgoing messages
-
-            for j in 0..num_neighbors {
-                let edge_idx = self.0.vn_indices[i][j];
-                self.0.edges[edge_idx].msg_vn_to_cn =
-                    total - self.0.edges[edge_idx].msg_cn_to_vn;
-            }
+    fn reset(&mut self) {
+        for edge in self.edges.iter_mut() {
+            edge.msg_vn_to_cn = 0.0;
+            edge.msg_cn_to_vn = 0.0;
         }
     }
 
@@ -78,8 +80,8 @@ impl SyndromeBpStrategy for SyndromeMinSumCore {
     /// To avoid having to do two passes to account for the extrinsic
     /// principle, the two minimum values are found in one pass.
     fn cn_update(&mut self, syndrome: &[u8]) {
-        for j in 0..self.0.num_cns {
-            let range = self.0.cn_ranges[j].clone();
+        for j in 0..self.num_cns {
+            let range = self.cn_ranges[j].clone();
             let syndrome_sign = 1.0 - 2.0 * syndrome[j] as f64;
             let mut total_sign = syndrome_sign;
             let mut min1 = f64::INFINITY;
@@ -89,7 +91,7 @@ impl SyndromeBpStrategy for SyndromeMinSumCore {
             // Combine all incoming messages
 
             for edge_idx in range.clone() {
-                let msg = self.0.edges[edge_idx].msg_vn_to_cn;
+                let msg = self.edges[edge_idx].msg_vn_to_cn;
                 let abs_msg = msg.abs();
 
                 total_sign *= msg.signum();
@@ -106,78 +108,86 @@ impl SyndromeBpStrategy for SyndromeMinSumCore {
             // Assign outgoing messages
 
             for edge_idx in range {
-                let msg = self.0.edges[edge_idx].msg_vn_to_cn;
+                let msg = self.edges[edge_idx].msg_vn_to_cn;
 
                 let extrinsic_sign = total_sign * msg.signum();
                 let extrinsic_mag =
                     if edge_idx == min1_idx { min2 } else { min1 };
 
-                self.0.edges[edge_idx].msg_cn_to_vn =
+                self.edges[edge_idx].msg_cn_to_vn =
                     extrinsic_sign * extrinsic_mag;
             }
         }
     }
 
-    fn total_llrs(&mut self) {
-        for i in 0..self.0.num_vns {
-            self.0.total_llrs[i] = self.0.channel_llrs[i];
+    /// Perform variable node update [1].
+    ///
+    /// This function also computes the total LLRs.
+    ///
+    /// [1] H. Yao et al., "Belief Propagation Decoding of Quantum LDPC Codes
+    ///     with Guided Decimation," arXiv:2312.10950, 2024.
+    fn vn_update(&mut self) {
+        for i in 0..self.num_vns {
+            let num_neighbors = self.vn_indices[i].len();
 
-            let num_neighbors = self.0.vn_indices[i].len();
+            // Combine all incoming messages
+
+            self.total_llrs[i] = self.channel_llrs[i];
             for j in 0..num_neighbors {
-                let edge_idx = self.0.vn_indices[i][j];
-                self.0.total_llrs[i] += self.0.edges[edge_idx].msg_cn_to_vn;
+                let idx = self.vn_indices[i][j];
+                self.total_llrs[i] += self.edges[idx].msg_cn_to_vn;
+            }
+
+            // Assign outgoing messages
+
+            for j in 0..num_neighbors {
+                let edge_idx = self.vn_indices[i][j];
+                self.edges[edge_idx].msg_vn_to_cn =
+                    self.total_llrs[i] - self.edges[edge_idx].msg_cn_to_vn;
             }
         }
     }
 
-    fn get_state(&mut self) -> &mut SyndromeBpCore {
-        &mut self.0
-    }
-
-    fn get_state_ref(&self) -> &SyndromeBpCore {
-        &self.0
+    fn total_llrs(&self) -> &[Self::Llr] {
+        &self.total_llrs
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use sprs::TriMat;
+    use sprs::{CsMat, TriMat};
 
     use super::*;
 
-    #[allow(non_snake_case)]
-    fn get_hamming_H() -> CsMat<u8> {
-        #[allow(non_snake_case)]
-        let mut H = TriMat::<u8>::new((3, 7));
+    fn get_hamming_h() -> CsMat<u8> {
+        let mut h = TriMat::<u8>::new((3, 7));
 
-        H.add_triplet(0, 0, 1);
-        H.add_triplet(1, 1, 1);
-        H.add_triplet(2, 2, 1);
-        H.add_triplet(0, 3, 1);
-        H.add_triplet(2, 3, 1);
-        H.add_triplet(0, 4, 1);
-        H.add_triplet(1, 4, 1);
-        H.add_triplet(1, 5, 1);
-        H.add_triplet(2, 5, 1);
-        H.add_triplet(0, 6, 1);
-        H.add_triplet(1, 6, 1);
-        H.add_triplet(2, 6, 1);
+        h.add_triplet(0, 0, 1);
+        h.add_triplet(1, 1, 1);
+        h.add_triplet(2, 2, 1);
+        h.add_triplet(0, 3, 1);
+        h.add_triplet(2, 3, 1);
+        h.add_triplet(0, 4, 1);
+        h.add_triplet(1, 4, 1);
+        h.add_triplet(1, 5, 1);
+        h.add_triplet(2, 5, 1);
+        h.add_triplet(0, 6, 1);
+        h.add_triplet(1, 6, 1);
+        h.add_triplet(2, 6, 1);
 
-        H.to_csr()
+        h.to_csr()
     }
 
     #[test]
     fn test_vn_update() {
-        #[allow(non_snake_case)]
-        let H = get_hamming_H();
+        let h = get_hamming_h();
 
-        let channel_llrs = vec![0.0; H.cols()];
-        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs);
-        for edge in &mut decoder.0.edges {
+        let mut engine = MinSumComputeEngine::new(&ParityCheckMatrix { h });
+        for edge in &mut engine.edges {
             edge.msg_cn_to_vn = 1.0;
         }
 
-        decoder.vn_update();
+        engine.vn_update();
 
         //     1 0 0 1 1 0 1
         // H = 0 1 0 0 1 1 1
@@ -190,23 +200,21 @@ mod tests {
         let expected =
             vec![0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0];
         let got: Vec<f64> =
-            decoder.0.edges.iter().map(|e| e.msg_vn_to_cn).collect();
+            engine.edges.iter().map(|e| e.msg_vn_to_cn).collect();
         assert_eq!(expected, got);
     }
 
     #[test]
     fn test_cn_update() {
-        #[allow(non_snake_case)]
-        let H = get_hamming_H();
+        let h = get_hamming_h();
 
-        let channel_llrs = vec![0.0; H.cols()];
-        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs);
-        for (num, edge) in (decoder.0.edges).iter_mut().enumerate() {
+        let mut engine = MinSumComputeEngine::new(&ParityCheckMatrix { h });
+        for (num, edge) in (engine.edges).iter_mut().enumerate() {
             edge.msg_vn_to_cn = (num + 1) as f64;
         }
 
         let s = vec![0, 1, 0];
-        decoder.cn_update(&s);
+        engine.cn_update(&s);
 
         //     1 0 0 1 1 0 1
         // H = 0 1 0 0 1 1 1
@@ -221,22 +229,22 @@ mod tests {
             2.0, 1.0, 1.0, 1.0, -6.0, -5.0, -5.0, -5.0, 10.0, 9.0, 9.0, 9.0,
         ];
         let got: Vec<f64> =
-            decoder.0.edges.iter().map(|e| e.msg_cn_to_vn).collect();
+            engine.edges.iter().map(|e| e.msg_cn_to_vn).collect();
         assert_eq!(expected, got);
     }
 
     #[test]
     fn test_total_llrs() {
-        #[allow(non_snake_case)]
-        let H = get_hamming_H();
+        let h = get_hamming_h();
 
-        let channel_llrs = vec![1.0; H.cols()];
-        let mut decoder = SyndromeMinSumCore::new(&H, &channel_llrs);
-        for edge in &mut decoder.0.edges {
+        let channel_llrs = vec![1.0; h.cols()];
+        let mut engine = MinSumComputeEngine::new(&ParityCheckMatrix { h });
+        engine.set_channel_llrs(&channel_llrs);
+        for edge in &mut engine.edges {
             edge.msg_cn_to_vn = 1.0;
         }
 
-        decoder.total_llrs();
+        engine.vn_update(); //< Implicitly computes total llrs
 
         //     1 0 0 1 1 0 1
         // H = 0 1 0 0 1 1 1
@@ -247,6 +255,6 @@ mod tests {
         //            0 0 1 1 0 1 1
 
         let expected = vec![2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0];
-        assert_eq!(expected, decoder.0.total_llrs);
+        assert_eq!(expected, engine.total_llrs);
     }
 }

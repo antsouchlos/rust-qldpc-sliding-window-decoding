@@ -1,7 +1,8 @@
-use rust_qldpc::decoders::Decoder;
-use rust_qldpc::decoders::bp::{Settings, SimpleSyndromeBpDecoder};
-use rust_qldpc::decoders::core::SyndromeBpDecoder;
-use rust_qldpc::decoders::core::spa::SyndromeSpaCore;
+use rust_qldpc::decoders::{
+    Decoder,
+    vanilla_bp::{VanillaBpDecoder, VanillaBpSettings},
+    core::{ParityCheckMatrix, spa::SpaComputeEngine},
+};
 use sprs::TriMat;
 
 fn make_ldpc(n: usize) -> sprs::CsMat<u8> {
@@ -31,14 +32,18 @@ fn main() {
     let mut syndrome = vec![0u8; h.rows()];
     syndrome[0] = 1;
 
-    let settings = Settings { max_iter: 100 };
+    let pcm = ParityCheckMatrix::new(h);
+
+    let settings = VanillaBpSettings { max_iter: 100 };
+
+    let mut decoder = VanillaBpDecoder::<SpaComputeEngine>::new(
+        settings,
+        &pcm,
+        &channel_llrs,
+    );
 
     for _ in 0..1000 {
-        let mut decoder = SimpleSyndromeBpDecoder::<SyndromeSpaCore>::new(
-            settings.clone(),
-            &h,
-            &channel_llrs,
-        );
+        decoder.reset();
         decoder.decode(&syndrome);
     }
 }
