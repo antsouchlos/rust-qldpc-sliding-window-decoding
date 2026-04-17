@@ -13,8 +13,8 @@ from quits.decoder import detector_error_model_to_matrix
 
 from ldpc.bp_decoder import BpDecoder as LdpcDecoder
 from rust_qldpc import (
-    SyndromeMinSumDecoder,
-    SyndromeSpaDecoder,
+    VanillaMinSumDecoder,
+    VanillaSpaDecoder,
 )
 
 from tqdm import tqdm
@@ -128,16 +128,9 @@ for p in ps:
     model = circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
-    priors = np.array(priors)
-    channel_llrs = np.log((1 - priors) / priors)
-
-    H_csr = csr_matrix(check_matrix)
-    decoder = SyndromeSpaDecoder(
-        H_csr.indptr,
-        H_csr.indices,
-        H_csr.data,
-        H_csr.shape,
-        channel_llrs=channel_llrs,
+    decoder = VanillaSpaDecoder(
+        csr_matrix(check_matrix),
+        priors=np.array(priors, dtype=np.float64),
         max_iter=max_iter,
     )
 
@@ -154,16 +147,9 @@ for p in ps:
     model = circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
-    priors = np.array(priors)
-    channel_llrs = np.log((1 - priors) / priors)
-
-    H_csr = csr_matrix(check_matrix)
-    decoder = SyndromeMinSumDecoder(
-        H_csr.indptr,
-        H_csr.indices,
-        H_csr.data,
-        H_csr.shape,
-        channel_llrs=channel_llrs,
+    decoder = VanillaMinSumDecoder(
+        csr_matrix(check_matrix),
+        priors=np.array(priors, dtype=np.float64),
         max_iter=max_iter,
     )
 

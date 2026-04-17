@@ -14,15 +14,22 @@ use crate::decoders::meta::sliding_window::{
 };
 
 fn extract_parity_check_matrix(h: &Bound<'_, PyAny>) -> PyResult<CsMat<u8>> {
-    let h_csr_indptr: PyReadonlyArray1<usize> =
-        h.getattr("indptr")?.extract()?;
-    let h_csr_indices: PyReadonlyArray1<usize> =
+    let h_csr_indptr: PyReadonlyArray1<i32> = h.getattr("indptr")?.extract()?;
+    let h_csr_indices: PyReadonlyArray1<i32> =
         h.getattr("indices")?.extract()?;
     let h_csr_data: PyReadonlyArray1<u8> = h.getattr("data")?.extract()?;
     let h_shape: (usize, usize) = h.getattr("shape")?.extract()?;
 
-    let h_csr_indptr = h_csr_indptr.as_slice()?;
-    let h_csr_indices = h_csr_indices.as_slice()?;
+    let h_csr_indptr: Vec<usize> = h_csr_indptr
+        .as_slice()?
+        .iter()
+        .map(|&x| x as usize)
+        .collect();
+    let h_csr_indices: Vec<usize> = h_csr_indices
+        .as_slice()?
+        .iter()
+        .map(|&x| x as usize)
+        .collect();
     let h_csr_data = h_csr_data.as_slice()?;
 
     if h_csr_indptr.len() != h_shape.0 + 1 {
@@ -34,12 +41,8 @@ fn extract_parity_check_matrix(h: &Bound<'_, PyAny>) -> PyResult<CsMat<u8>> {
         ));
     }
 
-    let h_csr = CsMat::new(
-        h_shape,
-        h_csr_indptr.to_vec(),
-        h_csr_indices.to_vec(),
-        h_csr_data.to_vec(),
-    );
+    let h_csr =
+        CsMat::new(h_shape, h_csr_indptr, h_csr_indices, h_csr_data.to_vec());
 
     Ok(h_csr)
 }
@@ -55,11 +58,12 @@ impl PyVanillaMinSumDecoder {
     #[allow(non_snake_case)]
     pub fn new(
         H: &Bound<'_, PyAny>,
-        priors: Vec<f64>,
+        priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
+        let priors = priors.as_slice()?;
         if priors.len() != h.cols() {
             return Err(PyValueError::new_err(
                 "channel_llrs.len() must equal ncols",
@@ -127,11 +131,12 @@ impl PyVanillaSpaDecoder {
     #[allow(non_snake_case)]
     pub fn new(
         H: &Bound<'_, PyAny>,
-        priors: Vec<f64>,
+        priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
+        let priors = priors.as_slice()?;
         if priors.len() != h.cols() {
             return Err(PyValueError::new_err(
                 "channel_llrs.len() must equal ncols",
@@ -209,12 +214,13 @@ impl PySlidingWindowMinSumDecoder {
         num_rounds: usize,
         W: usize,
         F: usize,
-        priors: Vec<f64>,
+        priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
         warm_start: bool,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
+        let priors = priors.as_array();
         if priors.len() != h.cols() {
             return Err(PyValueError::new_err(
                 "channel_llrs.len() must equal ncols",
@@ -295,12 +301,13 @@ impl PySlidingWindowSpaDecoder {
         num_rounds: usize,
         W: usize,
         F: usize,
-        priors: Vec<f64>,
+        priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
         warm_start: bool,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
+        let priors = priors.as_array();
         if priors.len() != h.cols() {
             return Err(PyValueError::new_err(
                 "channel_llrs.len() must equal ncols",
