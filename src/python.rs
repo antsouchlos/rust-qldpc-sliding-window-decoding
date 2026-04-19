@@ -9,7 +9,7 @@ use crate::decoders::bp::{VanillaBpDecoder, VanillaBpSettings};
 use crate::decoders::engine::ParityCheckMatrix;
 use crate::decoders::engine::min_sum::MinSumComputeEngine;
 use crate::decoders::engine::spa::SpaComputeEngine;
-use crate::decoders::meta::sliding_window::{
+use crate::decoders::sliding_window::{
     SlidingWindowDecoder, SlidingWindowSettings,
 };
 

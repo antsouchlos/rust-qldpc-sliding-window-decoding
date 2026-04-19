@@ -3,15 +3,12 @@ use sprs::{CsMat, DenseVector};
 
 use crate::decoders::{
     Decoder,
-    bp::{VanillaBpDecoder, VanillaBpSettings},
-    engine::{
-        AccessEngineInternals, EdgeId, ParityCheckMatrix,
-        min_sum::MinSumComputeEngine, spa::SpaComputeEngine,
-    },
-    meta::split_windows::{
-        OverlapInfo, get_overlap_info, get_window_borders, split_channel_llrs,
-        split_pcm,
-    },
+    engine::{EdgeId, ParityCheckMatrix},
+};
+
+use crate::windowing::{
+    OverlapInfo, get_overlap_info, get_window_borders, split_channel_llrs,
+    split_pcm,
 };
 
 #[derive(Clone)]

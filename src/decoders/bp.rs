@@ -3,7 +3,7 @@ use num_traits::Float;
 use crate::decoders::{
     Decoder,
     engine::{AccessEngineInternals, BpComputeEngine, ParityCheckMatrix},
-    meta::sliding_window::InnerWindowDecoder,
+    sliding_window::InnerWindowDecoder,
 };
 
 #[derive(Clone)]
