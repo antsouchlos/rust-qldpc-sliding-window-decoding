@@ -61,8 +61,6 @@ where
     type Settings = VanillaBpSettings;
 
     fn decode(&mut self, s: &[u8]) -> &[u8] {
-        self.engine.reset();
-
         for _ in 0..self.settings.max_iter {
             Self::hard_decision_into(&mut self.x_hat, self.engine.total_llrs());
 

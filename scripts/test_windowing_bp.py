@@ -13,8 +13,8 @@ from quits.decoder import detector_error_model_to_matrix, sliding_window_circuit
 
 from ldpc.bp_decoder import BpDecoder as LdpcDecoder
 from rust_qldpc import (
-    WindowingSyndromeMinSumDecoder,
-    WindowingSyndromeSpaDecoder,
+    SlidingWindowMinSumDecoder,
+    SlidingWindowSpaDecoder,
 )
 
 from tqdm import tqdm
@@ -140,22 +140,16 @@ for p in ps:
     model = circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
-    priors = np.array(priors)
-    channel_llrs = np.log((1 - priors) / priors)
-
     H_csr = csr_matrix(check_matrix)
-    decoder = WindowingSyndromeSpaDecoder(
-        H_csr.indptr,
-        H_csr.indices,
-        H_csr.data,
-        H_csr.shape,
-        code.hz.shape[0],
-        num_rounds,
-        channel_llrs,
-        W,
-        F,
-        pass_soft_info=False,
+    decoder = SlidingWindowSpaDecoder(
+        H=H_csr,
+        m=code.hz.shape[0],
+        num_rounds=num_rounds,
+        W=W,
+        F=F,
+        priors=priors,
         max_iter=max_iter,
+        warm_start=False,
     )
 
     LER = simulate_LER_batch(circuit, decoder, observable_matrix, num_trials, seed)
@@ -169,22 +163,16 @@ for p in ps:
     model = circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
-    priors = np.array(priors)
-    channel_llrs = np.log((1 - priors) / priors)
-
     H_csr = csr_matrix(check_matrix)
-    decoder = WindowingSyndromeMinSumDecoder(
-        H_csr.indptr,
-        H_csr.indices,
-        H_csr.data,
-        H_csr.shape,
+    decoder = SlidingWindowMinSumDecoder(
+        H_csr,
         code.hz.shape[0],
         num_rounds,
-        channel_llrs,
         W,
         F,
-        pass_soft_info=False,
+        priors,
         max_iter=max_iter,
+        warm_start=False,
     )
 
     LER = simulate_LER_batch(circuit, decoder, observable_matrix, num_trials, seed + 1)

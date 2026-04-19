@@ -3,7 +3,11 @@ use sprs::{CsMat, DenseVector};
 
 use crate::decoders::{
     Decoder,
-    engine::{EdgeId, ParityCheckMatrix},
+    bp::{VanillaBpDecoder, VanillaBpSettings},
+    engine::{
+        AccessEngineInternals, EdgeId, ParityCheckMatrix,
+        min_sum::MinSumComputeEngine, spa::SpaComputeEngine,
+    },
     meta::split_windows::{
         OverlapInfo, get_overlap_info, get_window_borders, split_channel_llrs,
         split_pcm,
@@ -52,72 +56,32 @@ where
     e_hat_total: Vec<u8>,
 }
 
-#[allow(non_snake_case)]
-impl<InnerDecoder> SlidingWindowDecoder<InnerDecoder>
-where
-    InnerDecoder: InnerWindowDecoder,
-    InnerDecoder::Llr: Float,
-{
-    pub fn new(
-        settings: SlidingWindowSettings,
-        inner_settings: <InnerDecoder as Decoder>::Settings,
-        H: &CsMat<u8>,
-        m: usize,
-        num_rounds: usize,
-        channel_llrs: &[InnerDecoder::Llr],
-    ) -> Self {
-        let window_borders =
-            get_window_borders(&H, m, num_rounds, settings.W, settings.F);
-
-        let win_hs = split_pcm(&H, &window_borders);
-        let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
-        let overlap_info = get_overlap_info(&window_borders);
-
-        let mut win_pcms =
-            Vec::<ParityCheckMatrix>::with_capacity(win_hs.len());
-        for win_h in win_hs {
-            let pcm = ParityCheckMatrix::new(&win_h);
-            win_pcms.push(pcm);
-        }
-
-        let window_decoders = win_pcms
-            .iter()
-            .zip(win_llrs)
-            .map(|(pcm, channel_llrs)| {
-                InnerDecoder::new(inner_settings.clone(), &pcm, &channel_llrs)
-            })
-            .collect();
-
-        Self {
-            e_hat_total: Vec::<u8>::with_capacity(H.cols()),
-            settings,
-            window_decoders,
-            window_borders,
-            overlap_info,
-            win_pcms: win_pcms,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.e_hat_total.clear();
-        for decoder in self.window_decoders.iter_mut() {
-            decoder.reset();
-        }
-    }
-}
-
-fn vec_add_inplace(a: &mut [u8], b: &[u8]) {
-    assert_eq!(a.len(), b.len());
-
-    for (x, &y) in a.iter_mut().zip(b.iter()) {
-        *x ^= y;
-    }
-}
-
 impl<InnerDecoder> SlidingWindowDecoder<InnerDecoder>
 where
     InnerDecoder: InnerWindowDecoder,
 {
+    // Comitting certain columns of the error estimate may change the parity
+    // of some syndrome bits for the next window. This function computes
+    // that change in parity.
+    //
+    // The figure below depicts two overlapping windows, the borders of which
+    // are represented by a dashed and a dotted line respectively.
+    //
+    // comitted
+    // rows
+    //    |
+    // |-----|
+    //
+    // 1 1 0 0   0 0 | 0 0
+    // 1 1 0 0   0 0 | 0 0
+    // 0 1 1 1   0 0 | 0 0
+    // 0 1 1 1   0 0 | 0 0
+    //         ...........  -
+    // 0 0 0 1 . 1 1 | 0 0  | rows whose
+    // 0 0 0 1 . 1 1 | 0 0  | parity changes
+    // --------. ---------  -
+    // 0 0 0 0 . 0 1 | 1 1
+    // 0 0 0 0 . 0 1 | 1 1
     #[allow(non_snake_case)]
     fn get_next_window_syndrome_diff(
         &self,
@@ -128,15 +92,21 @@ where
             return vec![];
         }
 
-        let s = self.win_pcms[win_idx].compute_syndrome(e_hat);
-        let overlap_s = &s[self.overlap_info.begin_positions[win_idx].0..];
+        let next_syndrome_len = self.win_pcms[win_idx + 1].rows();
+        let overlap_start = self.overlap_info.begin_positions[win_idx];
 
-        let next_win = &self.window_borders[win_idx + 1];
-        let next_win_rows = next_win.1.0 - next_win.0.0 + 1;
+        let mut e_hat_comitted = e_hat.to_vec();
+        for e_i in &mut e_hat_comitted[overlap_start.1..] {
+            *e_i = 0u8;
+        }
 
-        let mut result = vec![0u8; next_win_rows];
-        let copy_len = overlap_s.len().min(next_win_rows);
-        result[..copy_len].copy_from_slice(&overlap_s[..copy_len]);
+        let s = self.win_pcms[win_idx].compute_syndrome(&e_hat_comitted);
+
+        let mut result = vec![0u8; next_syndrome_len];
+        for (i, s_i) in s[overlap_start.0..].iter().enumerate() {
+            result[i] = *s_i;
+        }
+
         result
     }
 
@@ -196,13 +166,79 @@ where
     }
 }
 
-impl<InnerDecoder> Decoder for SlidingWindowDecoder<InnerDecoder>
+#[allow(non_snake_case)]
+impl<InnerDecoder> SlidingWindowDecoder<InnerDecoder>
 where
     InnerDecoder: InnerWindowDecoder,
+    InnerDecoder::Llr: Float,
+{
+    pub fn new(
+        settings: SlidingWindowSettings,
+        inner_settings: <InnerDecoder as Decoder>::Settings,
+        H: &CsMat<u8>,
+        m: usize,
+        num_rounds: usize,
+        channel_llrs: &[InnerDecoder::Llr],
+    ) -> Self {
+        let window_borders =
+            get_window_borders(&H, m, num_rounds, settings.W, settings.F);
+
+        let win_hs = split_pcm(&H, &window_borders);
+        let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
+        let overlap_info = get_overlap_info(&window_borders);
+
+        let mut win_pcms =
+            Vec::<ParityCheckMatrix>::with_capacity(win_hs.len());
+        for win_h in win_hs {
+            let pcm = ParityCheckMatrix::new(&win_h);
+            win_pcms.push(pcm);
+        }
+
+        let window_decoders = win_pcms
+            .iter()
+            .zip(win_llrs)
+            .map(|(pcm, channel_llrs)| {
+                InnerDecoder::new(inner_settings.clone(), &pcm, &channel_llrs)
+            })
+            .collect();
+
+        win_pcms.push(ParityCheckMatrix::new(H));
+
+        Self {
+            e_hat_total: Vec::<u8>::with_capacity(H.cols()),
+            settings,
+            window_decoders,
+            window_borders,
+            overlap_info,
+            win_pcms: win_pcms,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.e_hat_total.clear();
+        for decoder in self.window_decoders.iter_mut() {
+            decoder.reset();
+        }
+    }
+}
+
+fn vec_add_inplace(a: &mut [u8], b: &[u8]) {
+    assert_eq!(a.len(), b.len());
+
+    for (x, &y) in a.iter_mut().zip(b.iter()) {
+        *x ^= y;
+    }
+}
+
+impl<Engine> Decoder for SlidingWindowDecoder<Engine>
+where
+    Engine: InnerWindowDecoder,
 {
     type Settings = SlidingWindowSettings;
 
     fn decode(&mut self, s: &[u8]) -> &[u8] {
+        self.e_hat_total.clear();
+
         let mut s_diff = Vec::<u8>::zeros(self.window_borders[0].1.0 + 1);
 
         for win_idx in 0..self.window_decoders.len() {
@@ -217,7 +253,7 @@ where
                 self.window_decoders[win_idx].decode(&s_win).to_vec();
 
             self.e_hat_total
-                .extend(self.get_commited_e_hat(&e_hat, win_idx).iter());
+                .extend(self.get_commited_e_hat(&e_hat, win_idx));
             s_diff = self.get_next_window_syndrome_diff(&e_hat, win_idx);
         }
 

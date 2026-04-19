@@ -307,7 +307,7 @@ impl PySlidingWindowSpaDecoder {
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
-        let priors = priors.as_array();
+        let priors = priors.as_slice()?;
         if priors.len() != h.cols() {
             return Err(PyValueError::new_err(
                 "channel_llrs.len() must equal ncols",

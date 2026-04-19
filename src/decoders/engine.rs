@@ -80,6 +80,7 @@ impl ParityCheckMatrix {
             for (i, &val) in row.iter() {
                 parity ^= e_hat[i] * val;
             }
+
             syndrome[j] = parity;
         }
         syndrome
