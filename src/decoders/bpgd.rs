@@ -2,9 +2,13 @@ use num_traits::Float;
 
 use crate::decoders::{
     Decoder,
-    engine::{AccessEngineInternals, BpComputeEngine, ParityCheckMatrix},
+    engine::{AccessEngineInternals, BpComputeEngine, ParityCheckMatrix, spa::SpaComputeEngine},
     sliding_window::InnerWindowDecoder,
 };
+
+// TODO: Build this in a way were more cores are supported
+pub trait BpGdEngine: AccessEngineInternals {}
+impl BpGdEngine for SpaComputeEngine {}
 
 #[derive(Clone)]
 pub struct VanillaBpSettings {
@@ -24,7 +28,7 @@ pub struct BpGdDecoder<Engine: BpComputeEngine> {
 // (not just for floats)
 impl<Engine> BpGdDecoder<Engine>
 where
-    Engine: AccessEngineInternals,
+    Engine: BpGdEngine,
     Engine::Llr: Float,
 {
     fn hard_decision_into(dest: &mut [u8], llrs: &[Engine::Llr]) {
@@ -72,7 +76,7 @@ where
 
 impl<Engine> Decoder for BpGdDecoder<Engine>
 where
-    Engine: AccessEngineInternals,
+    Engine: BpGdEngine,
     Engine::Llr: Float,
 {
     type Settings = VanillaBpSettings;
@@ -95,7 +99,7 @@ where
 
 impl<Engine> InnerWindowDecoder for BpGdDecoder<Engine>
 where
-    Engine: AccessEngineInternals,
+    Engine: BpGdEngine,
     Engine::Llr: Float,
 {
     type Llr = Engine::Llr;
