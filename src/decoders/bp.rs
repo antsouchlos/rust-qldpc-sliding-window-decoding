@@ -78,7 +78,6 @@ where
 
 impl<Engine> InnerWindowDecoder for VanillaBpDecoder<Engine>
 where
-    Engine: BpComputeEngine,
     Engine: AccessEngineInternals,
     Engine::Llr: Float,
 {
