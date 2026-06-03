@@ -37,3 +37,29 @@ $ pip install .
     ```bash
     $ cargo flamegraph --bin profile_spa
     ```
+
+### Software Architecture
+
+The generic type parameters allow engines to be composed into decoders, and
+decoders into other composite decoders.
+
+<div align="center">
+
+```mermaid
+flowchart TB
+    SW[SlidingWindowDecoder]
+    VD[VanillaBpDecoder]
+    GD[BpGdDecoder]
+    MS[MinSumComputeEngine]
+    SPA[SpaComputeEngine]
+
+    SW -->|wraps| VD
+    SW -->|wraps| GD
+    VD -->|engine| MS
+    VD -->|engine| SPA
+    GD -->|engine| SPA
+```
+
+</div>
+
+
