@@ -12,6 +12,8 @@ $ pip install .
 
 ## Development
 
+### Usage
+
 - Set up environment
     ```bash
     $ uv venv --python 3.12
@@ -27,4 +29,11 @@ $ pip install .
     ```bash
     $ maturin develop --release
     $ uv run scripts/test_simple_bp.py
+    ```
+
+### Profiling
+
+- Generate flamegraph
+    ```bash
+    $ cargo flamegraph --bin profile_spa
     ```
