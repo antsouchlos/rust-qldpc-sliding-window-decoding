@@ -1,19 +1,30 @@
-# rust-qldpc-decoders
+# qldpc-sliding-window-decoding
 
-Rust implementations of a series of decoders meant for Quantum Low-Density Parity-Check Codes.
+Rut implementations with Python bindings of a series of decoders for Quantum
+Low-Density Parity-Check (QLDPC) Codes, centered around sliding-window
+decoding.
 
-## Run unit tests
-
-```bash
-$ uv venv --python 3.12
-$ . .venv/bin/activate
-$ uv pip install quits
-$ export LD_LIBRARY_PATH=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
-$ cargo test
-```
-
-## Install python package
+## Usage as Python package
 
 ```bash
-$ maturin develop --release
+$ pip install .
 ```
+
+## Development
+
+- Set up environment
+    ```bash
+    $ uv venv --python 3.12
+    $ . .venv/bin/activate
+    $ uv pip install quits
+    ```
+- Run unit tests
+    ```bash
+    $ export LD_LIBRARY_PATH=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
+    $ cargo test
+    ```
+- Compile Python library
+    ```bash
+    $ maturin develop --release
+    $ uv run scripts/test_simple_bp.py
+    ```
