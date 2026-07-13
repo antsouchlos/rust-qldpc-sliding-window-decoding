@@ -40,7 +40,7 @@ $ pip install .
 
 ### Software Architecture
 
-The generic type parameters allow engines to be composed into decoders, and
+Generic type parameters allow engines to be composed into decoders, and
 decoders into other composite decoders.
 
 <div align="center">
@@ -53,8 +53,8 @@ flowchart TB
     MS[MinSumComputeEngine]
     SPA[SpaComputeEngine]
 
-    SW -->|wraps| VD
-    SW -->|wraps| GD
+    SW -->|inner decoder| VD
+    SW -->|inner decoder| GD
     VD -->|engine| MS
     VD -->|engine| SPA
     GD -->|engine| SPA
