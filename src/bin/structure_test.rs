@@ -1,3 +1,4 @@
+use std::ops::Bound;
 use std::ops::Range;
 use std::ops::RangeBounds;
 
@@ -27,7 +28,6 @@ impl ParityCheckMatrix {
         Self { h: h.to_csr() }
     }
 
-    // TODO: Ensure that rows and cols are within 0..65536
     pub fn slice<R1, R2>(
         &self,
         rows: &R1,
@@ -37,6 +37,14 @@ impl ParityCheckMatrix {
         R1: RangeBounds<usize>,
         R2: RangeBounds<usize>,
     {
+        // These bounds are due to the way the edge IDs are generated
+        if let Bound::Included(&end) = rows.end_bound() {
+            assert!(end < (1 << 16), "row end must be less than 65536");
+        }
+        if let Bound::Included(&end) = cols.end_bound() {
+            assert!(end < (1 << 16), "col end must be less than 65536");
+        }
+
         self.h
             .outer_iterator()
             .enumerate()
