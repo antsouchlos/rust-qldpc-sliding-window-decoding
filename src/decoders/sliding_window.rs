@@ -1,4 +1,3 @@
-use num_traits::Float;
 use sprs::{CsMat, DenseVector};
 
 use crate::decoders::{
@@ -368,19 +367,20 @@ mod tests {
 
         let channel_llrs = Vec::<f64>::zeros(h.cols());
 
-        let decoder =
-            SlidingWindowDecoder::<StandardBpDecoder<MinSumComputeEngine>>::new(
-                SlidingWindowSettings {
-                    warm_start: false,
-                    F: 2,
-                    W: 3,
-                },
-                StandardBpSettings { max_iter: 32 },
-                &h,
-                2,
-                4 - 2,
-                &channel_llrs,
-            );
+        let decoder = SlidingWindowDecoder::<
+            StandardBpDecoder<MinSumComputeEngine>,
+        >::new(
+            SlidingWindowSettings {
+                warm_start: false,
+                F: 2,
+                W: 3,
+            },
+            StandardBpSettings { max_iter: 32 },
+            &h,
+            2,
+            4 - 2,
+            &channel_llrs,
+        );
 
         // 1 1 0 0   0 0 | 0 0
         // 1 1 0 0   0 0 | 0 0
@@ -445,19 +445,20 @@ mod tests {
         let channel_llrs =
             (0..h.cols()).map(|v| v as f64).collect::<Vec<f64>>();
 
-        let mut decoder =
-            SlidingWindowDecoder::<StandardBpDecoder<MinSumComputeEngine>>::new(
-                SlidingWindowSettings {
-                    warm_start: false,
-                    F: 2,
-                    W: 3,
-                },
-                StandardBpSettings { max_iter: 32 },
-                &h,
-                2,
-                4 - 2,
-                &channel_llrs,
-            );
+        let mut decoder = SlidingWindowDecoder::<
+            StandardBpDecoder<MinSumComputeEngine>,
+        >::new(
+            SlidingWindowSettings {
+                warm_start: false,
+                F: 2,
+                W: 3,
+            },
+            StandardBpSettings { max_iter: 32 },
+            &h,
+            2,
+            4 - 2,
+            &channel_llrs,
+        );
 
         // 1 2 0 0    0  0  | 0 0
         // 3 4 0 0    0  0  | 0 0

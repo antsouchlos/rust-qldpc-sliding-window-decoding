@@ -1,5 +1,3 @@
-use num_traits::Float;
-
 use crate::decoders::{
     Decoder,
     engine::{AccessEngineInternals, BpComputeEngine, ParityCheckMatrix},
