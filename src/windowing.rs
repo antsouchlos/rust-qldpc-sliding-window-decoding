@@ -1,3 +1,4 @@
+use num_traits::Float;
 use sprs::CsMat;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -30,7 +31,6 @@ pub fn get_num_windows(num_rounds: usize, W: usize, F: usize) -> usize {
     }
 }
 
-// TODO: Doc
 #[allow(non_snake_case)]
 pub fn get_window_borders(
     H: &CsMat<u8>,
@@ -150,11 +150,11 @@ pub fn split_pcm(
     result
 }
 
-pub fn split_channel_llrs(
-    priors: &[f64],
+pub fn split_channel_llrs<F: Float>(
+    priors: &[F],
     window_borders: &Vec<((usize, usize), (usize, usize))>,
-) -> Vec<Vec<f64>> {
-    let mut result = Vec::<Vec<f64>>::with_capacity(window_borders.len());
+) -> Vec<Vec<F>> {
+    let mut result = Vec::<Vec<F>>::with_capacity(window_borders.len());
 
     for &((_, col_begin), (_, col_end)) in window_borders {
         result.push(priors[col_begin..col_end + 1].to_vec());

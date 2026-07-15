@@ -17,6 +17,7 @@ crate-type = ["cdylib", "rlib"]
 numpy = "0.28.0"
 sprs = "0.11.4"
 rayon = "1"
+num-traits = "0.2.19"
 
 [dependencies.pyo3]
 version = "0.28.3"

@@ -1,141 +1,119 @@
 use crate::decoders::{
     Decoder,
-    core::{Edge, SyndromeBpDecoder, SyndromeBpStrategy},
+    engine::{AccessEngineInternals, BpComputeEngine, ParityCheckMatrix},
+    sliding_window::InnerWindowDecoder,
 };
 
-pub fn compute_syndrome(
-    edges: &[Edge],
-    num_cns: usize,
-    e_hat: &[u8],
-) -> Vec<u8> {
-    let mut syndrome = vec![0u8; num_cns];
-
-    for edge in edges {
-        syndrome[edge.row] ^= e_hat[edge.col];
-    }
-
-    syndrome
-}
-
 #[derive(Clone)]
-pub struct Settings {
+pub struct StandardBpSettings {
     pub max_iter: usize,
 }
 
 #[derive(Clone)]
-pub struct SimpleSyndromeBpDecoder<Core: SyndromeBpStrategy> {
-    pub settings: Settings,
-    pub core: Core,
+pub struct StandardBpDecoder<Engine: BpComputeEngine> {
+    settings: StandardBpSettings,
+    pcm: ParityCheckMatrix,
+    engine: Engine,
 }
 
-impl<Core: SyndromeBpStrategy> Decoder for SimpleSyndromeBpDecoder<Core> {
-    type Settings = Settings;
-
-    // TODO: Should a reset happen here?
-    fn decode(&mut self, s: &[u8]) -> Vec<u8> {
-        let mut e_hat: Vec<u8> = self
-            .core
-            .get_state()
-            .channel_llrs
-            .iter()
-            .map(|&v| if v < 0.0 { 1 } else { 0 })
-            .collect();
-
-        for _ in 0..self.settings.max_iter {
-            self.core.vn_update();
-            self.core.cn_update(&s);
-            self.core.total_llrs();
-
-            e_hat = self
-                .core
-                .get_state()
-                .total_llrs
-                .iter()
-                .map(|&v| if v < 0.0 { 1 } else { 0 })
-                .collect();
-
-            let state = self.core.get_state();
-            let s_hat = compute_syndrome(&state.edges, state.num_cns, &e_hat);
-            if s_hat == s {
-                break;
-            }
+impl<Engine> StandardBpDecoder<Engine>
+where
+    Engine: BpComputeEngine,
+{
+    fn hard_decision_into(dest: &mut [u8], llrs: &[f64]) {
+        for (dest_i, &llrs) in dest.iter_mut().zip(llrs) {
+            *dest_i = (llrs < 0f64) as u8;
         }
+    }
 
-        e_hat
+    pub fn new(
+        settings: StandardBpSettings,
+        pcm: &ParityCheckMatrix,
+        channel_llrs: &[f64],
+    ) -> Self {
+        let mut engine = Engine::new(pcm);
+        engine.set_channel_llrs(channel_llrs);
+
+        Self {
+            settings,
+            pcm: pcm.clone(),
+            engine,
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.engine.reset();
     }
 }
 
-impl<Core: SyndromeBpStrategy> SyndromeBpDecoder
-    for SimpleSyndromeBpDecoder<Core>
+impl<Engine> Decoder for StandardBpDecoder<Engine>
+where
+    Engine: BpComputeEngine,
 {
-    #[allow(non_snake_case)]
+    type Settings = StandardBpSettings;
+
+    fn decode(&mut self, s: &[u8]) -> Vec<u8> {
+        let mut x_hat = vec![0u8; self.pcm.cols()];
+
+        for _ in 0..self.settings.max_iter {
+            Self::hard_decision_into(&mut x_hat, &self.engine.total_llrs());
+
+            if self.pcm.compute_syndrome(&x_hat) == s {
+                break;
+            }
+
+            self.engine.vn_update();
+            self.engine.cn_update(s);
+        }
+
+        x_hat
+    }
+}
+
+impl<Engine> InnerWindowDecoder for StandardBpDecoder<Engine>
+where
+    Engine: AccessEngineInternals,
+{
     fn new(
-        settings: <Self as Decoder>::Settings,
-        H: &sprs::CsMat<u8>,
+        settings: Self::Settings,
+        pcm: &ParityCheckMatrix,
         channel_llrs: &[f64],
     ) -> Self {
+        let mut engine = Engine::new(pcm);
+        engine.set_channel_llrs(channel_llrs);
+
         Self {
-            settings: settings,
-            core: Core::new(H, channel_llrs),
+            settings,
+            pcm: pcm.clone(),
+            engine,
         }
+    }
+
+    fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
+        self.engine.get_cn_to_vn_msg(edge_id)
+    }
+
+    fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
+        self.engine.get_vn_to_cn_msg(edge_id)
+    }
+
+    fn get_channel_llr(&self, i: usize) -> f64 {
+        self.engine.get_channel_llr(i)
+    }
+
+    fn set_cn_to_vn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
+        self.engine.set_cn_to_vn_msg(edge_id, msg);
+    }
+
+    fn set_vn_to_cn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
+        self.engine.set_vn_to_cn_msg(edge_id, msg);
+    }
+
+    fn set_channel_llr(&mut self, i: usize, llr: f64) {
+        self.engine.set_channel_llr(i, llr);
     }
 
     fn reset(&mut self) {
-        for edge in &mut self.core.get_state().edges {
-            edge.msg_vn_to_cn = 0.0;
-            edge.msg_cn_to_vn = 0.0;
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use sprs::TriMat;
-
-    use super::*;
-
-    #[allow(non_snake_case)]
-    fn get_hamming_H() -> sprs::CsMat<u8> {
-        #[allow(non_snake_case)]
-        let mut H = TriMat::<u8>::new((3, 7));
-
-        H.add_triplet(0, 0, 1);
-        H.add_triplet(1, 1, 1);
-        H.add_triplet(2, 2, 1);
-        H.add_triplet(0, 3, 1);
-        H.add_triplet(2, 3, 1);
-        H.add_triplet(0, 4, 1);
-        H.add_triplet(1, 4, 1);
-        H.add_triplet(1, 5, 1);
-        H.add_triplet(2, 5, 1);
-        H.add_triplet(0, 6, 1);
-        H.add_triplet(1, 6, 1);
-        H.add_triplet(2, 6, 1);
-
-        H.to_csr()
-    }
-
-    #[test]
-    fn test_compute_syndrome() {
-        #[allow(non_snake_case)]
-        let H = get_hamming_H();
-
-        // Build edges from H manually to test compute_syndrome
-        let mut edges = Vec::new();
-        for (row, row_vec) in H.outer_iterator().enumerate() {
-            for (col, _) in row_vec.iter() {
-                edges.push(Edge {
-                    row,
-                    col,
-                    msg_vn_to_cn: 0.0,
-                    msg_cn_to_vn: 0.0,
-                });
-            }
-        }
-
-        let e = vec![0, 1, 0, 1, 0, 1, 0];
-        let s = vec![1, 0, 0];
-
-        assert_eq!(s, compute_syndrome(&edges, H.rows(), &e));
+        self.engine.reset();
     }
 }
