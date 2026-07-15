@@ -13,8 +13,8 @@ from quits.decoder import detector_error_model_to_matrix
 
 from ldpc.bp_decoder import BpDecoder as LdpcDecoder
 from rust_qldpc import (
-    VanillaMinSumDecoder,
-    VanillaSpaDecoder,
+    StandardMinSumDecoder,
+    StandardSpaDecoder,
 )
 
 from tqdm import tqdm
@@ -128,7 +128,7 @@ for p in ps:
     model = circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
-    decoder = VanillaSpaDecoder(
+    decoder = StandardSpaDecoder(
         csr_matrix(check_matrix),
         priors=np.array(priors, dtype=np.float64),
         max_iter=max_iter,
@@ -147,7 +147,7 @@ for p in ps:
     model = circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
-    decoder = VanillaMinSumDecoder(
+    decoder = StandardMinSumDecoder(
         csr_matrix(check_matrix),
         priors=np.array(priors, dtype=np.float64),
         max_iter=max_iter,

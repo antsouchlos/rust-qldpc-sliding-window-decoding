@@ -7,13 +7,13 @@ use crate::decoders::{
 };
 
 #[derive(Clone)]
-pub struct VanillaBpSettings {
+pub struct StandardBpSettings {
     pub max_iter: usize,
 }
 
 #[derive(Clone)]
-pub struct VanillaBpDecoder<Engine: BpComputeEngine> {
-    settings: VanillaBpSettings,
+pub struct StandardBpDecoder<Engine: BpComputeEngine> {
+    settings: StandardBpSettings,
     pcm: ParityCheckMatrix,
     engine: Engine,
     x_hat: Vec<u8>,
@@ -21,7 +21,7 @@ pub struct VanillaBpDecoder<Engine: BpComputeEngine> {
 
 // TODO: Implement this more generally to also support, e.g., SIMD operations
 // (not just for floats)
-impl<Engine> VanillaBpDecoder<Engine>
+impl<Engine> StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
     Engine::Llr: Float,
@@ -33,7 +33,7 @@ where
     }
 
     pub fn new(
-        settings: VanillaBpSettings,
+        settings: StandardBpSettings,
         pcm: &ParityCheckMatrix,
         channel_llrs: &[Engine::Llr],
     ) -> Self {
@@ -53,12 +53,12 @@ where
     }
 }
 
-impl<Engine> Decoder for VanillaBpDecoder<Engine>
+impl<Engine> Decoder for StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
     Engine::Llr: Float,
 {
-    type Settings = VanillaBpSettings;
+    type Settings = StandardBpSettings;
 
     fn decode(&mut self, s: &[u8]) -> &[u8] {
         for _ in 0..self.settings.max_iter {
@@ -76,7 +76,7 @@ where
     }
 }
 
-impl<Engine> InnerWindowDecoder for VanillaBpDecoder<Engine>
+impl<Engine> InnerWindowDecoder for StandardBpDecoder<Engine>
 where
     Engine: AccessEngineInternals,
     Engine::Llr: Float,

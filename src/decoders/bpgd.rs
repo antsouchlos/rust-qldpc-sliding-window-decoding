@@ -11,13 +11,13 @@ pub trait BpGdEngine: AccessEngineInternals {}
 impl BpGdEngine for SpaComputeEngine {}
 
 #[derive(Clone)]
-pub struct VanillaBpSettings {
+pub struct StandardBpSettings {
     pub max_iter: usize,
 }
 
 #[derive(Clone)]
 pub struct BpGdDecoder<Engine: BpComputeEngine> {
-    settings: VanillaBpSettings,
+    settings: StandardBpSettings,
     pcm: ParityCheckMatrix,
     engine: Engine,
     x_hat: Vec<u8>,
@@ -38,7 +38,7 @@ where
     }
 
     pub fn new(
-        settings: VanillaBpSettings,
+        settings: StandardBpSettings,
         pcm: &ParityCheckMatrix,
         channel_llrs: &[Engine::Llr],
     ) -> Self {
@@ -79,7 +79,7 @@ where
     Engine: BpGdEngine,
     Engine::Llr: Float,
 {
-    type Settings = VanillaBpSettings;
+    type Settings = StandardBpSettings;
 
     fn decode(&mut self, s: &[u8]) -> &[u8] {
         for _ in 0..self.settings.max_iter {

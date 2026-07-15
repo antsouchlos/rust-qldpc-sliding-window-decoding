@@ -48,7 +48,7 @@ decoders into other composite decoders.
 ```mermaid
 flowchart TB
     SW[SlidingWindowDecoder]
-    VD[VanillaBpDecoder]
+    VD[StandardBpDecoder]
     GD[BpGdDecoder]
     MS[MinSumComputeEngine]
     SPA[SpaComputeEngine]

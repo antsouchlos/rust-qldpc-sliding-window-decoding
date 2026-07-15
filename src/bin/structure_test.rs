@@ -127,12 +127,12 @@ trait Decoder {
 //
 
 #[derive(Clone)]
-struct VanillaBpSettings {
+struct StandardBpSettings {
     max_iter: usize,
 }
 
-struct VanillaBpDecoder<Engine: BpComputeEngine> {
-    settings: VanillaBpSettings,
+struct StandardBpDecoder<Engine: BpComputeEngine> {
+    settings: StandardBpSettings,
     pcm: ParityCheckMatrix,
     engine: Engine,
     x_hat: Vec<u8>,
@@ -140,7 +140,7 @@ struct VanillaBpDecoder<Engine: BpComputeEngine> {
 
 // TODO: Implement this more generally to also support, e.g., SIMD operations
 // (not just for floats)
-impl<Engine> VanillaBpDecoder<Engine>
+impl<Engine> StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
     Engine::Llr: Float,
@@ -152,7 +152,7 @@ where
     }
 
     fn new(
-        settings: VanillaBpSettings,
+        settings: StandardBpSettings,
         pcm: &ParityCheckMatrix,
         channel_llrs: &[Engine::Llr],
     ) -> Self {
@@ -168,7 +168,7 @@ where
     }
 }
 
-impl<Engine> Decoder for VanillaBpDecoder<Engine>
+impl<Engine> Decoder for StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
     Engine::Llr: Float,
@@ -358,8 +358,8 @@ fn main() {
 
     let priors = todo!();
 
-    let decoder = VanillaBpDecoder::<MinSumComputeEngine>::new(
-        VanillaBpSettings { max_iter: 32 },
+    let decoder = StandardBpDecoder::<MinSumComputeEngine>::new(
+        StandardBpSettings { max_iter: 32 },
         &pcm,
         priors,
     );

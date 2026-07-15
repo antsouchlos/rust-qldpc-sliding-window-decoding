@@ -1,6 +1,6 @@
 use rust_qldpc::decoders::{
     Decoder,
-    bp::{VanillaBpDecoder, VanillaBpSettings},
+    bp::{StandardBpDecoder, StandardBpSettings},
     engine::{ParityCheckMatrix, spa::SpaComputeEngine},
 };
 
@@ -35,9 +35,9 @@ fn main() {
 
     let pcm = ParityCheckMatrix::new(&h);
 
-    let settings = VanillaBpSettings { max_iter: 100 };
+    let settings = StandardBpSettings { max_iter: 100 };
 
-    let mut decoder = VanillaBpDecoder::<SpaComputeEngine>::new(
+    let mut decoder = StandardBpDecoder::<SpaComputeEngine>::new(
         settings,
         &pcm,
         &channel_llrs,

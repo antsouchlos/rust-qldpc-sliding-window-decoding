@@ -5,7 +5,7 @@ use rayon::prelude::*;
 use sprs::CsMat;
 
 use crate::decoders::Decoder;
-use crate::decoders::bp::{VanillaBpDecoder, VanillaBpSettings};
+use crate::decoders::bp::{StandardBpDecoder, StandardBpSettings};
 use crate::decoders::engine::ParityCheckMatrix;
 use crate::decoders::engine::min_sum::MinSumComputeEngine;
 use crate::decoders::engine::spa::SpaComputeEngine;
@@ -47,13 +47,13 @@ fn extract_parity_check_matrix(h: &Bound<'_, PyAny>) -> PyResult<CsMat<u8>> {
     Ok(h_csr)
 }
 
-#[pyclass(name = "VanillaMinSumDecoder")]
-pub struct PyVanillaMinSumDecoder {
-    decoder: VanillaBpDecoder<MinSumComputeEngine>,
+#[pyclass(name = "StandardMinSumDecoder")]
+pub struct PyStandardMinSumDecoder {
+    decoder: StandardBpDecoder<MinSumComputeEngine>,
 }
 
 #[pymethods]
-impl PyVanillaMinSumDecoder {
+impl PyStandardMinSumDecoder {
     #[new]
     #[allow(non_snake_case)]
     pub fn new(
@@ -76,8 +76,8 @@ impl PyVanillaMinSumDecoder {
             .collect::<Vec<_>>();
 
         Ok(Self {
-            decoder: VanillaBpDecoder::new(
-                VanillaBpSettings { max_iter: max_iter },
+            decoder: StandardBpDecoder::new(
+                StandardBpSettings { max_iter: max_iter },
                 &ParityCheckMatrix::new(&h),
                 &channel_llrs,
             ),
@@ -120,13 +120,13 @@ impl PyVanillaMinSumDecoder {
     }
 }
 
-#[pyclass(name = "VanillaSpaDecoder")]
-pub struct PyVanillaSpaDecoder {
-    decoder: VanillaBpDecoder<SpaComputeEngine>,
+#[pyclass(name = "StandardSpaDecoder")]
+pub struct PyStandardSpaDecoder {
+    decoder: StandardBpDecoder<SpaComputeEngine>,
 }
 
 #[pymethods]
-impl PyVanillaSpaDecoder {
+impl PyStandardSpaDecoder {
     #[new]
     #[allow(non_snake_case)]
     pub fn new(
@@ -155,8 +155,8 @@ impl PyVanillaSpaDecoder {
         }
 
         Ok(Self {
-            decoder: VanillaBpDecoder::new(
-                VanillaBpSettings { max_iter: max_iter },
+            decoder: StandardBpDecoder::new(
+                StandardBpSettings { max_iter: max_iter },
                 &ParityCheckMatrix::new(&h),
                 &channel_llrs,
             ),
@@ -201,7 +201,7 @@ impl PyVanillaSpaDecoder {
 
 #[pyclass(name = "SlidingWindowMinSumDecoder")]
 pub struct PySlidingWindowMinSumDecoder {
-    decoder: SlidingWindowDecoder<VanillaBpDecoder<MinSumComputeEngine>>,
+    decoder: SlidingWindowDecoder<StandardBpDecoder<MinSumComputeEngine>>,
 }
 
 #[pymethods]
@@ -241,7 +241,7 @@ impl PySlidingWindowMinSumDecoder {
         Ok(Self {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings { warm_start, W, F },
-                VanillaBpSettings { max_iter },
+                StandardBpSettings { max_iter },
                 &h,
                 m,
                 num_rounds,
@@ -288,7 +288,7 @@ impl PySlidingWindowMinSumDecoder {
 
 #[pyclass(name = "SlidingWindowSpaDecoder")]
 pub struct PySlidingWindowSpaDecoder {
-    decoder: SlidingWindowDecoder<VanillaBpDecoder<SpaComputeEngine>>,
+    decoder: SlidingWindowDecoder<StandardBpDecoder<SpaComputeEngine>>,
 }
 
 #[pymethods]
@@ -328,7 +328,7 @@ impl PySlidingWindowSpaDecoder {
         Ok(Self {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings { warm_start, W, F },
-                VanillaBpSettings { max_iter },
+                StandardBpSettings { max_iter },
                 &h,
                 m,
                 num_rounds,
@@ -374,8 +374,8 @@ impl PySlidingWindowSpaDecoder {
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyVanillaMinSumDecoder>()?;
-    m.add_class::<PyVanillaSpaDecoder>()?;
+    m.add_class::<PyStandardMinSumDecoder>()?;
+    m.add_class::<PyStandardSpaDecoder>()?;
     m.add_class::<PySlidingWindowMinSumDecoder>()?;
     m.add_class::<PySlidingWindowSpaDecoder>()?;
     Ok(())

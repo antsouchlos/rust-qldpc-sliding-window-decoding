@@ -261,7 +261,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::decoders::{
-        bp::{VanillaBpDecoder, VanillaBpSettings},
+        bp::{StandardBpDecoder, StandardBpSettings},
         engine::min_sum::MinSumComputeEngine,
     };
 
@@ -311,8 +311,8 @@ mod tests {
 
         let pcm = ParityCheckMatrix::new(&h);
 
-        let mut decoder = VanillaBpDecoder::<MinSumComputeEngine>::new(
-            VanillaBpSettings { max_iter: 32 },
+        let mut decoder = StandardBpDecoder::<MinSumComputeEngine>::new(
+            StandardBpSettings { max_iter: 32 },
             &pcm,
             &channel_llrs,
         );
@@ -374,13 +374,13 @@ mod tests {
         let channel_llrs = Vec::<f64>::zeros(h.cols());
 
         let decoder =
-            SlidingWindowDecoder::<VanillaBpDecoder<MinSumComputeEngine>>::new(
+            SlidingWindowDecoder::<StandardBpDecoder<MinSumComputeEngine>>::new(
                 SlidingWindowSettings {
                     warm_start: false,
                     F: 2,
                     W: 3,
                 },
-                VanillaBpSettings { max_iter: 32 },
+                StandardBpSettings { max_iter: 32 },
                 &h,
                 2,
                 4 - 2,
@@ -451,13 +451,13 @@ mod tests {
             (0..h.cols()).map(|v| v as f64).collect::<Vec<f64>>();
 
         let mut decoder =
-            SlidingWindowDecoder::<VanillaBpDecoder<MinSumComputeEngine>>::new(
+            SlidingWindowDecoder::<StandardBpDecoder<MinSumComputeEngine>>::new(
                 SlidingWindowSettings {
                     warm_start: false,
                     F: 2,
                     W: 3,
                 },
-                VanillaBpSettings { max_iter: 32 },
+                StandardBpSettings { max_iter: 32 },
                 &h,
                 2,
                 4 - 2,
@@ -531,8 +531,8 @@ mod tests {
 
         let pcm = ParityCheckMatrix::new(&h);
 
-        let mut decoder1 = VanillaBpDecoder::<MinSumComputeEngine>::new(
-            VanillaBpSettings { max_iter: 32 },
+        let mut decoder1 = StandardBpDecoder::<MinSumComputeEngine>::new(
+            StandardBpSettings { max_iter: 32 },
             &pcm,
             &channel_llrs,
         );
@@ -542,8 +542,8 @@ mod tests {
             decoder1.set_cn_to_vn_msg(eid, (idx + 1) as f64);
         }
 
-        let mut decoder2 = VanillaBpDecoder::<MinSumComputeEngine>::new(
-            VanillaBpSettings { max_iter: 32 },
+        let mut decoder2 = StandardBpDecoder::<MinSumComputeEngine>::new(
+            StandardBpSettings { max_iter: 32 },
             &pcm,
             &channel_llrs,
         );
