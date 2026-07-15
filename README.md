@@ -1,7 +1,7 @@
 # qldpc-sliding-window-decoding
 
-Rut implementations with Python bindings of a series of decoders for Quantum
-Low-Density Parity-Check (QLDPC) Codes, centered around sliding-window
+Rut implementations with Python bindings of a series of decoders for quantum
+low-density parity-check (QLDPC) Codes, centered around sliding-window
 decoding.
 
 ## Usage as Python package
