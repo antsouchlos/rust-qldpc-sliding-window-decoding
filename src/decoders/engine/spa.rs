@@ -91,8 +91,6 @@ pub struct SpaComputeEngine {
 }
 
 impl BpComputeEngine for SpaComputeEngine {
-    type Llr = f64;
-
     // TODO: Get rid of magic number
     fn new(pcm: &ParityCheckMatrix) -> Self {
         let h_csr = pcm.h.to_csr();
@@ -139,7 +137,7 @@ impl BpComputeEngine for SpaComputeEngine {
         }
     }
 
-    fn set_channel_llrs(&mut self, llrs: &[Self::Llr]) {
+    fn set_channel_llrs(&mut self, llrs: &[f64]) {
         self.state.channel_llrs.copy_from_slice(llrs);
     }
 
@@ -218,7 +216,7 @@ impl BpComputeEngine for SpaComputeEngine {
         }
     }
 
-    fn total_llrs(&self) -> &[Self::Llr] {
+    fn total_llrs(&self) -> &[f64] {
         &self.state.total_llrs
     }
 }
@@ -240,25 +238,25 @@ impl AccessEngineInternals for SpaComputeEngine {
     fn get_cn_to_vn_msg(
         &self,
         edge_id: crate::decoders::engine::EdgeId,
-    ) -> Self::Llr {
+    ) -> f64 {
         self.state.edges[self.edge_id_to_edge_idx(edge_id)].msg_cn_to_vn
     }
 
     fn get_vn_to_cn_msg(
         &self,
         edge_id: crate::decoders::engine::EdgeId,
-    ) -> Self::Llr {
+    ) -> f64 {
         self.state.edges[self.edge_id_to_edge_idx(edge_id)].msg_vn_to_cn
     }
 
-    fn get_channel_llr(&self, i: usize) -> Self::Llr {
+    fn get_channel_llr(&self, i: usize) -> f64 {
         self.state.channel_llrs[i]
     }
 
     fn set_cn_to_vn_msg(
         &mut self,
         edge_id: crate::decoders::engine::EdgeId,
-        msg: Self::Llr,
+        msg: f64,
     ) {
         let edge_idx = self.edge_id_to_edge_idx(edge_id);
         self.state.edges[edge_idx].msg_cn_to_vn = msg;
@@ -267,13 +265,13 @@ impl AccessEngineInternals for SpaComputeEngine {
     fn set_vn_to_cn_msg(
         &mut self,
         edge_id: crate::decoders::engine::EdgeId,
-        msg: Self::Llr,
+        msg: f64,
     ) {
         let edge_idx = self.edge_id_to_edge_idx(edge_id);
         self.state.edges[edge_idx].msg_vn_to_cn = msg;
     }
 
-    fn set_channel_llr(&mut self, i: usize, llr: Self::Llr) {
+    fn set_channel_llr(&mut self, i: usize, llr: f64) {
         self.state.channel_llrs[i] = llr;
     }
 }

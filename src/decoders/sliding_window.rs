@@ -20,21 +20,19 @@ pub struct SlidingWindowSettings {
 }
 
 pub trait InnerWindowDecoder: Decoder {
-    type Llr: Copy;
-
     fn new(
         settings: Self::Settings,
         pcm: &ParityCheckMatrix,
-        channel_llrs: &[Self::Llr],
+        channel_llrs: &[f64],
     ) -> Self;
 
-    fn get_cn_to_vn_msg(&self, edge_id: EdgeId) -> Self::Llr;
-    fn get_vn_to_cn_msg(&self, edge_id: EdgeId) -> Self::Llr;
-    fn get_channel_llr(&self, i: usize) -> Self::Llr;
+    fn get_cn_to_vn_msg(&self, edge_id: EdgeId) -> f64;
+    fn get_vn_to_cn_msg(&self, edge_id: EdgeId) -> f64;
+    fn get_channel_llr(&self, i: usize) -> f64;
 
-    fn set_cn_to_vn_msg(&mut self, edge_id: EdgeId, msg: Self::Llr);
-    fn set_vn_to_cn_msg(&mut self, edge_id: EdgeId, msg: Self::Llr);
-    fn set_channel_llr(&mut self, i: usize, llr: Self::Llr);
+    fn set_cn_to_vn_msg(&mut self, edge_id: EdgeId, msg: f64);
+    fn set_vn_to_cn_msg(&mut self, edge_id: EdgeId, msg: f64);
+    fn set_channel_llr(&mut self, i: usize, llr: f64);
 
     fn reset(&mut self);
 }
@@ -167,7 +165,6 @@ where
 impl<InnerDecoder> SlidingWindowDecoder<InnerDecoder>
 where
     InnerDecoder: InnerWindowDecoder,
-    InnerDecoder::Llr: Float,
 {
     pub fn new(
         settings: SlidingWindowSettings,
@@ -175,7 +172,7 @@ where
         H: &CsMat<u8>,
         m: usize,
         num_rounds: usize,
-        channel_llrs: &[InnerDecoder::Llr],
+        channel_llrs: &[f64],
     ) -> Self {
         let window_borders =
             get_window_borders(&H, m, num_rounds, settings.W, settings.F);

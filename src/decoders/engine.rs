@@ -1,7 +1,7 @@
 pub mod min_sum;
 pub mod spa;
 
-use std::ops::RangeBounds;
+use std::ops::{Bound, RangeBounds};
 
 use sprs::CsMat;
 
@@ -18,13 +18,11 @@ pub struct ParityCheckMatrix {
     h: CsMat<u8>,
 }
 
-// TODO: Rethink if having this makes any sense at all
 impl ParityCheckMatrix {
     pub fn new(h: &CsMat<u8>) -> Self {
         Self { h: h.to_csr() }
     }
 
-    // TODO: Ensure that rows and cols are within 0..65536
     pub fn slice<R1, R2>(
         &self,
         rows: &R1,
@@ -34,6 +32,14 @@ impl ParityCheckMatrix {
         R1: RangeBounds<usize>,
         R2: RangeBounds<usize>,
     {
+        // These bounds are due to the way the edge IDs are generated
+        if let Bound::Included(&end) = rows.end_bound() {
+            assert!(end < (1 << 16), "row end must be less than 65536");
+        }
+        if let Bound::Included(&end) = cols.end_bound() {
+            assert!(end < (1 << 16), "col end must be less than 65536");
+        }
+
         self.h
             .outer_iterator()
             .enumerate()
@@ -88,28 +94,26 @@ impl ParityCheckMatrix {
 
 /// (Only) responsible for actual computation
 pub trait BpComputeEngine {
-    type Llr: Copy;
-
     fn new(pcm: &ParityCheckMatrix) -> Self;
-    fn set_channel_llrs(&mut self, llrs: &[Self::Llr]);
+    fn set_channel_llrs(&mut self, llrs: &[f64]);
     fn reset(&mut self);
 
     fn cn_update(&mut self, syndrome: &[u8]);
     fn vn_update(&mut self);
-    fn total_llrs(&self) -> &[Self::Llr];
+    fn total_llrs(&self) -> &[f64];
 }
 
 /// Some decoders need access to the engine internals during the decoding
 /// process. This trait gives them access without exposing the actual
 /// internal structure.
 pub trait AccessEngineInternals: BpComputeEngine {
-    fn get_cn_to_vn_msg(&self, edge_id: EdgeId) -> Self::Llr;
-    fn get_vn_to_cn_msg(&self, edge_id: EdgeId) -> Self::Llr;
-    fn get_channel_llr(&self, i: usize) -> Self::Llr;
+    fn get_cn_to_vn_msg(&self, edge_id: EdgeId) -> f64;
+    fn get_vn_to_cn_msg(&self, edge_id: EdgeId) -> f64;
+    fn get_channel_llr(&self, i: usize) -> f64;
 
-    fn set_cn_to_vn_msg(&mut self, edge_id: EdgeId, msg: Self::Llr);
-    fn set_vn_to_cn_msg(&mut self, edge_id: EdgeId, msg: Self::Llr);
-    fn set_channel_llr(&mut self, i: usize, llr: Self::Llr);
+    fn set_cn_to_vn_msg(&mut self, edge_id: EdgeId, msg: f64);
+    fn set_vn_to_cn_msg(&mut self, edge_id: EdgeId, msg: f64);
+    fn set_channel_llr(&mut self, i: usize, llr: f64);
 }
 
 #[cfg(test)]

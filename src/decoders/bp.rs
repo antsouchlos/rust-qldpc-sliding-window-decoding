@@ -18,23 +18,20 @@ pub struct StandardBpDecoder<Engine: BpComputeEngine> {
     engine: Engine,
 }
 
-// TODO: Implement this more generally to also support, e.g., SIMD operations
-// (not just for floats)
 impl<Engine> StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
-    Engine::Llr: Float,
 {
-    fn hard_decision_into(dest: &mut [u8], llrs: &[Engine::Llr]) {
+    fn hard_decision_into(dest: &mut [u8], llrs: &[f64]) {
         for (dest_i, &llrs) in dest.iter_mut().zip(llrs) {
-            *dest_i = (llrs < -Engine::Llr::neg_zero()) as u8;
+            *dest_i = (llrs < 0f64) as u8;
         }
     }
 
     pub fn new(
         settings: StandardBpSettings,
         pcm: &ParityCheckMatrix,
-        channel_llrs: &[Engine::Llr],
+        channel_llrs: &[f64],
     ) -> Self {
         let mut engine = Engine::new(pcm);
         engine.set_channel_llrs(channel_llrs);
@@ -54,7 +51,6 @@ where
 impl<Engine> Decoder for StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
-    Engine::Llr: Float,
 {
     type Settings = StandardBpSettings;
 
@@ -79,14 +75,11 @@ where
 impl<Engine> InnerWindowDecoder for StandardBpDecoder<Engine>
 where
     Engine: AccessEngineInternals,
-    Engine::Llr: Float,
 {
-    type Llr = Engine::Llr;
-
     fn new(
         settings: Self::Settings,
         pcm: &ParityCheckMatrix,
-        channel_llrs: &[Engine::Llr],
+        channel_llrs: &[f64],
     ) -> Self {
         let mut engine = Engine::new(pcm);
         engine.set_channel_llrs(channel_llrs);
@@ -98,35 +91,27 @@ where
         }
     }
 
-    fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> Self::Llr {
+    fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
         self.engine.get_cn_to_vn_msg(edge_id)
     }
 
-    fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> Self::Llr {
+    fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
         self.engine.get_vn_to_cn_msg(edge_id)
     }
 
-    fn get_channel_llr(&self, i: usize) -> Self::Llr {
+    fn get_channel_llr(&self, i: usize) -> f64 {
         self.engine.get_channel_llr(i)
     }
 
-    fn set_cn_to_vn_msg(
-        &mut self,
-        edge_id: super::engine::EdgeId,
-        msg: Self::Llr,
-    ) {
+    fn set_cn_to_vn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
         self.engine.set_cn_to_vn_msg(edge_id, msg);
     }
 
-    fn set_vn_to_cn_msg(
-        &mut self,
-        edge_id: super::engine::EdgeId,
-        msg: Self::Llr,
-    ) {
+    fn set_vn_to_cn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
         self.engine.set_vn_to_cn_msg(edge_id, msg);
     }
 
-    fn set_channel_llr(&mut self, i: usize, llr: Self::Llr) {
+    fn set_channel_llr(&mut self, i: usize, llr: f64) {
         self.engine.set_channel_llr(i, llr);
     }
 
