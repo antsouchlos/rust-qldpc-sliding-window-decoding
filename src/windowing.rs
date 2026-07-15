@@ -31,7 +31,6 @@ pub fn get_num_windows(num_rounds: usize, W: usize, F: usize) -> usize {
     }
 }
 
-// TODO: Doc
 #[allow(non_snake_case)]
 pub fn get_window_borders(
     H: &CsMat<u8>,

@@ -146,8 +146,6 @@ struct StandardBpDecoder<Engine: BpComputeEngine> {
     x_hat: Vec<u8>,
 }
 
-// TODO: Implement this more generally to also support, e.g., SIMD operations
-// (not just for floats)
 impl<Engine> StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,

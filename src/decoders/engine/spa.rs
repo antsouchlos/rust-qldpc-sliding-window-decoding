@@ -53,14 +53,6 @@ impl PhiTable {
     }
 }
 
-// TODO: Get rid of magic numbers and make these paramaters properly
-// configurable
-impl Default for PhiTable {
-    fn default() -> Self {
-        Self::new(2usize.pow(16), 25.0)
-    }
-}
-
 #[derive(Clone)]
 pub struct Edge {
     pub row: usize,
@@ -91,7 +83,6 @@ pub struct SpaComputeEngine {
 }
 
 impl BpComputeEngine for SpaComputeEngine {
-    // TODO: Get rid of magic number
     fn new(pcm: &ParityCheckMatrix) -> Self {
         let h_csr = pcm.h.to_csr();
         let num_cns = h_csr.rows();
@@ -132,7 +123,7 @@ impl BpComputeEngine for SpaComputeEngine {
                 num_vns,
                 num_cns,
             },
-            phi_table: PhiTable::default(),
+            phi_table: PhiTable::new(2usize.pow(16), 25.0),
             K: 25.0,
         }
     }
