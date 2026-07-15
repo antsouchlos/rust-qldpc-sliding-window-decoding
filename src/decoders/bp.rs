@@ -16,7 +16,6 @@ pub struct StandardBpDecoder<Engine: BpComputeEngine> {
     settings: StandardBpSettings,
     pcm: ParityCheckMatrix,
     engine: Engine,
-    x_hat: Vec<u8>,
 }
 
 // TODO: Implement this more generally to also support, e.g., SIMD operations
@@ -44,7 +43,6 @@ where
             settings,
             pcm: pcm.clone(),
             engine,
-            x_hat: vec![0u8; pcm.cols()],
         }
     }
 
@@ -60,11 +58,13 @@ where
 {
     type Settings = StandardBpSettings;
 
-    fn decode(&mut self, s: &[u8]) -> &[u8] {
-        for _ in 0..self.settings.max_iter {
-            Self::hard_decision_into(&mut self.x_hat, self.engine.total_llrs());
+    fn decode(&mut self, s: &[u8]) -> Vec<u8> {
+        let mut x_hat = vec![0u8; self.pcm.cols()];
 
-            if self.pcm.compute_syndrome(&self.x_hat) == s {
+        for _ in 0..self.settings.max_iter {
+            Self::hard_decision_into(&mut x_hat, &self.engine.total_llrs());
+
+            if self.pcm.compute_syndrome(&x_hat) == s {
                 break;
             }
 
@@ -72,7 +72,7 @@ where
             self.engine.cn_update(s);
         }
 
-        &self.x_hat
+        x_hat
     }
 }
 
@@ -95,7 +95,6 @@ where
             settings,
             pcm: pcm.clone(),
             engine,
-            x_hat: vec![0u8; pcm.cols()],
         }
     }
 
