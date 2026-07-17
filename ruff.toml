@@ -1,0 +1,45 @@
+target-version = "py39"
+src = ["scripts"]
+extend-include = ["scripts/**/*.py"]
+extend-exclude = ["rust_qldpc.pyi"]
+
+[lint]
+select = [
+    "I",      # isort: import ordering
+    "TID",    # flake8-tidy-imports: prefer from-imports
+    "N",      # pep8-naming: naming conventions
+    "UP",     # pyupgrade: modern syntax (f-strings)
+    "D300",   # pydocstyle: triple-double-quoted docstrings
+    "E",      # pycodestyle: basic formatting
+    "W",      # pycodestyle: whitespace
+    "F",      # pyflakes: logic errors, unused imports
+    "PGH",    # pygrep-hooks: specific # type: ignore codes
+]
+
+ignore = [
+    "E501",   # line length (codebase intentionally uses long lines with # fmt: off blocks)
+]
+
+[lint.isort]
+known-first-party = ["rust_qldpc"]
+
+[lint.pep8-naming]
+ignore-names = [
+    "H",
+    "N",
+    "W",
+    "F",
+    "p",
+    "m",
+    "n",
+    "H_*",
+    "N_*",
+    "W_*",
+    "F_*",
+    "LER*",
+    "T",
+    "L",
+    "simulate_LER*",
+    "apply_windowing_and_simulate_LER",
+    "Decoder",
+]

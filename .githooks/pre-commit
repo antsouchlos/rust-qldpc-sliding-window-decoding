@@ -1,0 +1,3 @@
+#!/bin/sh
+cargo run --bin stub_gen
+git add rust_qldpc.pyi

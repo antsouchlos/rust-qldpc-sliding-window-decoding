@@ -31,6 +31,20 @@ $ pip install .
     $ uv run scripts/test_simple_bp.py
     ```
 
+### Generating type stubs
+
+Regenerate `rust_qldpc.pyi` when `src/python.rs` changes:
+```bash
+$ cargo run --bin stub_gen
+```
+
+A `.githooks/pre-commit` script auto-regenerates `rust_qldpc.pyi` before every
+commit so the stub never drifts from `src/python.rs`. Enable it after cloning:
+
+```bash
+$ git config core.hooksPath .githooks
+```
+
 ### Profiling
 
 - Generate flamegraph
