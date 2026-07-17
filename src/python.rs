@@ -1,6 +1,7 @@
 use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3_stub_gen::derive::*;
 use rayon::prelude::*;
 use sprs::CsMat;
 
@@ -47,16 +48,22 @@ fn extract_parity_check_matrix(h: &Bound<'_, PyAny>) -> PyResult<CsMat<u8>> {
     Ok(h_csr)
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "StandardMinSumDecoder")]
 pub struct PyStandardMinSumDecoder {
     decoder: StandardBpDecoder<MinSumComputeEngine>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyStandardMinSumDecoder {
     #[new]
     #[allow(non_snake_case)]
     pub fn new(
+        #[gen_stub(override_type(
+            type_repr = "scipy.sparse.csr_matrix",
+            imports = ("scipy.sparse",)
+        ))]
         H: &Bound<'_, PyAny>,
         priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
@@ -71,13 +78,13 @@ impl PyStandardMinSumDecoder {
         }
 
         let channel_llrs = priors
-            .into_iter()
+            .iter()
             .map(|p| (1.0 - p).ln() - p.ln())
             .collect::<Vec<_>>();
 
         Ok(Self {
             decoder: StandardBpDecoder::new(
-                StandardBpSettings { max_iter: max_iter },
+                StandardBpSettings { max_iter },
                 &ParityCheckMatrix::new(&h),
                 &channel_llrs,
             ),
@@ -120,16 +127,22 @@ impl PyStandardMinSumDecoder {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "StandardSpaDecoder")]
 pub struct PyStandardSpaDecoder {
     decoder: StandardBpDecoder<SpaComputeEngine>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PyStandardSpaDecoder {
     #[new]
     #[allow(non_snake_case)]
     pub fn new(
+        #[gen_stub(override_type(
+            type_repr = "scipy.sparse.csr_matrix",
+            imports = ("scipy.sparse",)
+        ))]
         H: &Bound<'_, PyAny>,
         priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
@@ -144,7 +157,7 @@ impl PyStandardSpaDecoder {
         }
 
         let channel_llrs = priors
-            .into_iter()
+            .iter()
             .map(|p| (1.0 - p).ln() - p.ln())
             .collect::<Vec<_>>();
 
@@ -156,7 +169,7 @@ impl PyStandardSpaDecoder {
 
         Ok(Self {
             decoder: StandardBpDecoder::new(
-                StandardBpSettings { max_iter: max_iter },
+                StandardBpSettings { max_iter },
                 &ParityCheckMatrix::new(&h),
                 &channel_llrs,
             ),
@@ -199,16 +212,22 @@ impl PyStandardSpaDecoder {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "SlidingWindowMinSumDecoder")]
 pub struct PySlidingWindowMinSumDecoder {
     decoder: SlidingWindowDecoder<StandardBpDecoder<MinSumComputeEngine>>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PySlidingWindowMinSumDecoder {
     #[new]
     #[allow(non_snake_case)]
     pub fn new(
+        #[gen_stub(override_type(
+            type_repr = "scipy.sparse.csr_matrix",
+            imports = ("scipy.sparse",)
+        ))]
         H: &Bound<'_, PyAny>,
         m: usize,
         num_rounds: usize,
@@ -228,7 +247,7 @@ impl PySlidingWindowMinSumDecoder {
         }
 
         let channel_llrs = priors
-            .into_iter()
+            .iter()
             .map(|p| (1.0 - p).ln() - p.ln())
             .collect::<Vec<_>>();
 
@@ -286,16 +305,22 @@ impl PySlidingWindowMinSumDecoder {
     }
 }
 
+#[gen_stub_pyclass]
 #[pyclass(name = "SlidingWindowSpaDecoder")]
 pub struct PySlidingWindowSpaDecoder {
     decoder: SlidingWindowDecoder<StandardBpDecoder<SpaComputeEngine>>,
 }
 
+#[gen_stub_pymethods]
 #[pymethods]
 impl PySlidingWindowSpaDecoder {
     #[new]
     #[allow(non_snake_case)]
     pub fn new(
+        #[gen_stub(override_type(
+            type_repr = "scipy.sparse.csr_matrix",
+            imports = ("scipy.sparse",)
+        ))]
         H: &Bound<'_, PyAny>,
         m: usize,
         num_rounds: usize,
@@ -315,7 +340,7 @@ impl PySlidingWindowSpaDecoder {
         }
 
         let channel_llrs = priors
-            .into_iter()
+            .iter()
             .map(|p| (1.0 - p).ln() - p.ln())
             .collect::<Vec<_>>();
 

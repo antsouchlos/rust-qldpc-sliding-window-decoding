@@ -18,7 +18,9 @@ numpy = "0.28.0"
 sprs = "0.11.4"
 rayon = "1"
 num-traits = "0.2.19"
+pyo3-stub-gen = "0.23"
+pyo3-stub-gen-derive = "0.23"
 
 [dependencies.pyo3]
 version = "0.28.3"
-features = ["abi3-py38"]
+features = ["abi3-py310"]

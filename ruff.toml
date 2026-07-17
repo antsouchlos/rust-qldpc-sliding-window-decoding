@@ -1,6 +1,7 @@
 target-version = "py39"
 src = ["scripts"]
 extend-include = ["scripts/**/*.py"]
+extend-exclude = ["rust_qldpc.pyi"]
 
 [lint]
 select = [
