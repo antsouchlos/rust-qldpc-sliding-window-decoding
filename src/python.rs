@@ -1,6 +1,7 @@
 use numpy::{PyArray1, PyArray2, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3_stub_gen::derive::*;
 use rayon::prelude::*;
 use sprs::CsMat;
@@ -12,6 +13,9 @@ use crate::decoders::engine::min_sum::MinSumComputeEngine;
 use crate::decoders::engine::spa::SpaComputeEngine;
 use crate::decoders::sliding_window::{
     SlidingWindowDecoder, SlidingWindowSettings,
+};
+use crate::windowing::{
+    get_overlap_info as get_rust_overlap_info, get_window_borders,
 };
 
 fn extract_parity_check_matrix(h: &Bound<'_, PyAny>) -> PyResult<CsMat<u8>> {
@@ -398,10 +402,46 @@ impl PySlidingWindowSpaDecoder {
     }
 }
 
+#[gen_stub_pyfunction]
+#[pyfunction]
+#[allow(non_snake_case)]
+fn get_overlap_info<'py>(
+    py: Python<'py>,
+    #[gen_stub(override_type(
+        type_repr = "scipy.sparse.csr_matrix",
+        imports = ("scipy.sparse",)
+    ))]
+    H: &Bound<'_, PyAny>,
+    m: usize,
+    num_rounds: usize,
+    W: usize,
+    F: usize,
+) -> PyResult<Bound<'py, PyDict>> {
+    let h = extract_parity_check_matrix(H)?;
+    let window_borders = get_window_borders(&h, m, num_rounds, W, F);
+    let overlap = get_rust_overlap_info(&window_borders);
+
+    let dict = PyDict::new(py);
+    let begin: Vec<Vec<usize>> = overlap
+        .begin_positions
+        .iter()
+        .map(|&(r, c)| vec![r, c])
+        .collect();
+    let end: Vec<Vec<usize>> = overlap
+        .end_positions
+        .iter()
+        .map(|&(r, c)| vec![r, c])
+        .collect();
+    dict.set_item("begin_positions", begin)?;
+    dict.set_item("end_positions", end)?;
+    Ok(dict)
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyStandardMinSumDecoder>()?;
     m.add_class::<PyStandardSpaDecoder>()?;
     m.add_class::<PySlidingWindowMinSumDecoder>()?;
     m.add_class::<PySlidingWindowSpaDecoder>()?;
+    m.add_function(wrap_pyfunction!(get_overlap_info, m)?)?;
     Ok(())
 }

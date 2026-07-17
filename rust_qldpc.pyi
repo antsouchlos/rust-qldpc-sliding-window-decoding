@@ -11,6 +11,7 @@ __all__ = [
     "SlidingWindowSpaDecoder",
     "StandardMinSumDecoder",
     "StandardSpaDecoder",
+    "get_overlap_info",
 ]
 
 @typing.final
@@ -36,4 +37,6 @@ class StandardSpaDecoder:
     def __new__(cls, H: scipy.sparse.csr_matrix, priors: numpy.typing.NDArray[numpy.float64], max_iter: builtins.int) -> StandardSpaDecoder: ...
     def decode(self, syndrome: typing.Sequence[builtins.int]) -> numpy.typing.NDArray[numpy.uint8]: ...
     def decode_batch(self, syndromes: numpy.typing.NDArray[numpy.uint8]) -> numpy.typing.NDArray[numpy.uint8]: ...
+
+def get_overlap_info(H: scipy.sparse.csr_matrix, m: builtins.int, num_rounds: builtins.int, W: builtins.int, F: builtins.int) -> dict: ...
 
