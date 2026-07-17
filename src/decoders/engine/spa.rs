@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn test_phi_self_inverse() {
-        let table = PhiTable::default();
+        let table = PhiTable::new(2usize.pow(16), 25.0);
         // Tolerance is looser for large x because phi(x) is tiny (≈ 2e^{-x}) and
         // falls in the steep near-zero region of the table where phi'' is large.
         for &(x, tol) in &[
@@ -297,7 +297,7 @@ mod tests {
 
     #[test]
     fn test_phi_accuracy() {
-        let table = PhiTable::default();
+        let table = PhiTable::new(2usize.pow(16), 25.0);
 
         for &x in &[0.5f64, 1.0, 2.0, 5.0] {
             let exact = -(x / 2.0).tanh().ln();
@@ -312,7 +312,7 @@ mod tests {
 
     #[test]
     fn test_phi_boundary() {
-        let table = PhiTable::default();
+        let table = PhiTable::new(2usize.pow(16), 25.0);
 
         assert_eq!(table.lookup(25.0), 0.0);
         assert_eq!(table.lookup(100.0), 0.0);
