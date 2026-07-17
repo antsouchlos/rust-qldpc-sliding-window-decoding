@@ -1,15 +1,14 @@
+import matplotlib.pyplot as plt
 import numba as nb
 import numpy as np
 from scipy.sparse import csr_matrix
-import matplotlib.pyplot as plt
+from sw_gdg.codes_q import create_cyclic_permuting_matrix, create_QC_GHP_codes
 from tqdm import tqdm
 
 from rust_qldpc import (
     SyndromeSpaDecoder,
     SyndromeSpaGdDecoder,
 )
-
-from sw_gdg.codes_q import create_cyclic_permuting_matrix, create_QC_GHP_codes
 
 # %%
 
@@ -41,7 +40,7 @@ def simulate_LER_batch(
 ):
     np.random.seed(seed)
 
-    m, n = H.shape  # type: ignore
+    m, n = H.shape  # type: ignore[attr-defined]
 
     errors = (np.random.random((max_trials, n)) < p).astype(np.uint8)
     s = compute_syndrome_batch(errors, H.indices, H.indptr, m)

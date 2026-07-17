@@ -1,24 +1,19 @@
 # %%
 
-
-import numpy as np
-from scipy.sparse import csc_matrix, csr_matrix
-import stim
 import matplotlib.pyplot as plt
-
-from quits import ErrorModel, CircuitBuildOptions
+import numpy as np
+import stim
+from ldpc.bp_decoder import BpDecoder as LdpcDecoder
+from quits import CircuitBuildOptions, ErrorModel
+from quits.decoder import detector_error_model_to_matrix, sliding_window_circuit_mem
 from quits.qldpc_code import BbCode
 from quits.simulation import get_stim_mem_result
-from quits.decoder import detector_error_model_to_matrix, sliding_window_circuit_mem
+from scipy.sparse import csc_matrix, csr_matrix
 
-from ldpc.bp_decoder import BpDecoder as LdpcDecoder
 from rust_qldpc import (
     SlidingWindowMinSumDecoder,
     SlidingWindowSpaDecoder,
 )
-
-from tqdm import tqdm
-
 
 # %% [markdown]
 
@@ -147,7 +142,7 @@ for p in ps:
         num_rounds=num_rounds,
         W=W,
         F=F,
-        priors=priors,
+        priors=priors,  # type: ignore[attr-defined]
         max_iter=max_iter,
         warm_start=False,
     )
@@ -170,7 +165,7 @@ for p in ps:
         num_rounds,
         W,
         F,
-        priors,
+        priors,  # type: ignore[attr-defined]
         max_iter=max_iter,
         warm_start=False,
     )

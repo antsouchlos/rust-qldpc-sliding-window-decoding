@@ -1,24 +1,23 @@
 # %%
 
-
-import numpy as np
-from scipy.sparse import csc_matrix, csr_matrix
-import stim
 import matplotlib.pyplot as plt
-
-from quits import ErrorModel, CircuitBuildOptions
+import numpy as np
+import stim
+from ldpc.bp_decoder import BpDecoder as LdpcDecoder
+from quits import CircuitBuildOptions, ErrorModel
+from quits.decoder import detector_error_model_to_matrix
 from quits.qldpc_code import BbCode
 from quits.simulation import get_stim_mem_result
-from quits.decoder import detector_error_model_to_matrix
+from scipy.sparse import csc_matrix, csr_matrix
+from tqdm import tqdm
 
-from ldpc.bp_decoder import BpDecoder as LdpcDecoder
 from rust_qldpc import (
     StandardMinSumDecoder,
     StandardSpaDecoder,
 )
+from util import make_parallel_batch_decoder
 
-from tqdm import tqdm
-
+ParallelLdpcDecoder = make_parallel_batch_decoder(LdpcDecoder)
 
 # %% [markdown]
 
@@ -166,7 +165,7 @@ for p in ps:
     model = circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
-    decoder = LdpcDecoder(
+    decoder = ParallelLdpcDecoder(
         check_matrix,
         bp_method="product_sum",
         max_iter=max_iter,
@@ -174,7 +173,9 @@ for p in ps:
         channel_probs=priors,
     )
 
-    LER = simulate_LER(code, circuit, decoder, observable_matrix, num_trials, seed + 2)
+    LER = simulate_LER_batch(
+        code, circuit, decoder, observable_matrix, num_trials, seed + 2
+    )
     LERs_roffe_spa.append(LER)
     print(f"p: {p:.3f}, LER: {LER:.6f}")
 
@@ -185,7 +186,7 @@ for p in ps:
     model = circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
-    decoder = LdpcDecoder(
+    decoder = ParallelLdpcDecoder(
         check_matrix,
         bp_method="min_sum",
         max_iter=max_iter,
@@ -193,7 +194,9 @@ for p in ps:
         channel_probs=priors,
     )
 
-    LER = simulate_LER(code, circuit, decoder, observable_matrix, num_trials, seed + 3)
+    LER = simulate_LER_batch(
+        code, circuit, decoder, observable_matrix, num_trials, seed + 3
+    )
     LERs_roffe_min_sum.append(LER)
     print(f"p: {p:.3f}, LER: {LER:.6f}")
 
