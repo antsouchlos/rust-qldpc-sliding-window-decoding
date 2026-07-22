@@ -97,6 +97,7 @@ fn append_splitters_to_pcm(
 
 /// Wraps an InnerAscedDecoder and handles extending the syndrome by g before
 /// decoding
+#[derive(Clone)]
 struct InnerDecoderWrapper<InnerDecoder>
 where
     InnerDecoder: InnerAscedDecoder,
@@ -127,15 +128,16 @@ pub trait InnerAscedDecoder: Decoder {
     ) -> Self;
 }
 
-struct AscedSettings {
+pub struct AscedSettings {
     /// Hamming weight of a splitter row
-    splitter_weight: usize,
+    pub splitter_weight: usize,
     /// Number of batches, i.e., sets of differing splitters
-    num_batches: usize,
+    pub num_batches: usize,
     /// Number of splitters to add to each batch
-    delta: usize,
+    pub delta: usize,
 }
 
+#[derive(Clone)]
 pub struct AscedDecoder<InnerDecoder>
 where
     InnerDecoder: InnerAscedDecoder,
@@ -148,7 +150,7 @@ impl<InnerDecoder> AscedDecoder<InnerDecoder>
 where
     InnerDecoder: InnerAscedDecoder,
 {
-    fn new(
+    pub fn new(
         settings: AscedSettings,
         inner_settings: InnerDecoder::Settings,
         h: &CsMat<u8>,

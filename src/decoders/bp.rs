@@ -1,5 +1,6 @@
 use crate::decoders::{
     Decoder,
+    asced::InnerAscedDecoder,
     engine::{AccessEngineInternals, BpComputeEngine, ParityCheckMatrix},
     sliding_window::InnerWindowDecoder,
 };
@@ -115,5 +116,20 @@ where
 
     fn reset(&mut self) {
         self.engine.reset();
+    }
+}
+
+impl<Engine> InnerAscedDecoder for StandardBpDecoder<Engine>
+where
+    Engine: BpComputeEngine,
+{
+    type Settings = StandardBpSettings;
+
+    fn new(
+        settings: Self::Settings,
+        pcm: &sprs::CsMat<u8>,
+        channel_llrs: &[f64],
+    ) -> Self {
+        Self::new(settings, &ParityCheckMatrix::new(pcm), channel_llrs)
     }
 }
