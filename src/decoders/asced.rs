@@ -49,8 +49,11 @@ fn generate_4_cycle_free_row(
     Some((new_row_indices, feasible_set))
 }
 
-/// Generate a vector of indices, each index corresponing to another 1-entry of
-/// a splitter
+/// Generate a splitter row.
+///
+/// # Returns
+///
+/// A vector of indices at which the row has 1-entries.
 fn generate_splitter_indices(
     h: &CsMat<u8>,
     row_weight: usize,
