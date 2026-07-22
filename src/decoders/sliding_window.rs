@@ -19,6 +19,8 @@ pub struct SlidingWindowSettings {
 }
 
 pub trait InnerWindowDecoder: Decoder {
+    type Settings: Clone;
+
     fn new(
         settings: Self::Settings,
         pcm: &ParityCheckMatrix,
@@ -167,7 +169,7 @@ where
 {
     pub fn new(
         settings: SlidingWindowSettings,
-        inner_settings: <InnerDecoder as Decoder>::Settings,
+        inner_settings: InnerDecoder::Settings,
         H: &CsMat<u8>,
         m: usize,
         num_rounds: usize,
@@ -226,8 +228,6 @@ impl<Engine> Decoder for SlidingWindowDecoder<Engine>
 where
     Engine: InnerWindowDecoder,
 {
-    type Settings = SlidingWindowSettings;
-
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
         let mut e_hat_total = Vec::<u8>::with_capacity(self.total_n);
 

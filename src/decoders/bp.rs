@@ -50,8 +50,6 @@ impl<Engine> Decoder for StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
 {
-    type Settings = StandardBpSettings;
-
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
         let mut x_hat = vec![0u8; self.pcm.cols()];
 
@@ -74,8 +72,10 @@ impl<Engine> InnerWindowDecoder for StandardBpDecoder<Engine>
 where
     Engine: AccessEngineInternals,
 {
+    type Settings = StandardBpSettings;
+
     fn new(
-        settings: Self::Settings,
+        settings: StandardBpSettings,
         pcm: &ParityCheckMatrix,
         channel_llrs: &[f64],
     ) -> Self {
