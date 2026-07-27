@@ -192,8 +192,6 @@ where
 
         let win_pcms: Vec<ParityCheckMatrix> = win_hs
             .iter()
-            // TODO: Double check this chain statement (do we need it? what does it do?)
-            .chain(std::iter::once(H))
             .map(|win_h| ParityCheckMatrix::new(&win_h))
             .collect();
 
