@@ -132,4 +132,8 @@ where
     ) -> Self {
         Self::new(settings, &ParityCheckMatrix::new(pcm), channel_llrs)
     }
+
+    fn reset(&mut self) {
+        self.engine.reset();
+    }
 }

@@ -121,6 +121,15 @@ where
     }
 }
 
+impl<InnerDecoder> InnerDecoderWrapper<InnerDecoder>
+where
+    InnerDecoder: InnerAscedDecoder,
+{
+    pub fn reset(&mut self) {
+        self.decoder.reset();
+    }
+}
+
 pub trait InnerAscedDecoder: Decoder {
     type Settings: Clone;
 
@@ -129,6 +138,8 @@ pub trait InnerAscedDecoder: Decoder {
         pcm: &CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self;
+
+    fn reset(&mut self);
 }
 
 pub struct AscedSettings {
@@ -238,6 +249,12 @@ where
         Self {
             decoder_ensemble,
             pcm: ParityCheckMatrix::new(h),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        for decoder in &mut self.decoder_ensemble {
+            decoder.reset();
         }
     }
 }
