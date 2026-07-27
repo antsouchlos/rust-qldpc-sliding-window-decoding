@@ -9,6 +9,7 @@ import typing
 __all__ = [
     "AscedMinSumDecoder",
     "AscedSpaDecoder",
+    "SlidingWindowAscedSpaDecoder",
     "SlidingWindowMinSumDecoder",
     "SlidingWindowSpaDecoder",
     "StandardMinSumDecoder",
@@ -24,6 +25,12 @@ class AscedMinSumDecoder:
 @typing.final
 class AscedSpaDecoder:
     def __new__(cls, H: scipy.sparse.csr_matrix, splitter_weight: builtins.int, num_batches: builtins.int, delta: builtins.int, priors: numpy.typing.NDArray[numpy.float64], max_iter: builtins.int) -> AscedSpaDecoder: ...
+    def decode(self, syndrome: typing.Sequence[builtins.int]) -> numpy.typing.NDArray[numpy.uint8]: ...
+    def decode_batch(self, syndromes: numpy.typing.NDArray[numpy.uint8]) -> numpy.typing.NDArray[numpy.uint8]: ...
+
+@typing.final
+class SlidingWindowAscedSpaDecoder:
+    def __new__(cls, H: scipy.sparse.csr_matrix, m: builtins.int, num_rounds: builtins.int, W: builtins.int, F: builtins.int, priors: numpy.typing.NDArray[numpy.float64], max_iter: builtins.int, warm_start: builtins.bool, splitter_weight: builtins.int, num_batches: builtins.int, delta: builtins.int) -> SlidingWindowAscedSpaDecoder: ...
     def decode(self, syndrome: typing.Sequence[builtins.int]) -> numpy.typing.NDArray[numpy.uint8]: ...
     def decode_batch(self, syndromes: numpy.typing.NDArray[numpy.uint8]) -> numpy.typing.NDArray[numpy.uint8]: ...
 

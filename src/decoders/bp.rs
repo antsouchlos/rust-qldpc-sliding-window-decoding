@@ -1,3 +1,5 @@
+use sprs::CsMat;
+
 use crate::decoders::{
     Decoder,
     asced::InnerAscedDecoder,
@@ -77,15 +79,16 @@ where
 
     fn new(
         settings: StandardBpSettings,
-        pcm: &ParityCheckMatrix,
+        h: &CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self {
-        let mut engine = Engine::new(pcm);
+        let pcm = ParityCheckMatrix::new(&h);
+        let mut engine = Engine::new(&pcm);
         engine.set_channel_llrs(channel_llrs);
 
         Self {
             settings,
-            pcm: pcm.clone(),
+            pcm,
             engine,
         }
     }

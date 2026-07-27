@@ -23,7 +23,7 @@ pub trait InnerWindowDecoder: Decoder {
 
     fn new(
         settings: Self::Settings,
-        pcm: &ParityCheckMatrix,
+        pcm: &CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self;
 
@@ -182,14 +182,7 @@ where
         let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
         let overlap_info = get_overlap_info(&window_borders);
 
-        let mut win_pcms =
-            Vec::<ParityCheckMatrix>::with_capacity(win_hs.len());
-        for win_h in win_hs {
-            let pcm = ParityCheckMatrix::new(&win_h);
-            win_pcms.push(pcm);
-        }
-
-        let window_decoders = win_pcms
+        let window_decoders = win_hs
             .iter()
             .zip(win_llrs)
             .map(|(pcm, channel_llrs)| {
@@ -197,7 +190,12 @@ where
             })
             .collect();
 
-        win_pcms.push(ParityCheckMatrix::new(H));
+        let win_pcms: Vec<ParityCheckMatrix> = win_hs
+            .iter()
+            // TODO: Double check this chain statement (do we need it? what does it do?)
+            .chain(std::iter::once(H))
+            .map(|win_h| ParityCheckMatrix::new(&win_h))
+            .collect();
 
         Self {
             settings,
