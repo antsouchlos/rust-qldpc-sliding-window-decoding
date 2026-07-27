@@ -5,7 +5,7 @@ from quits import BbCode
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
-from rust_qldpc import AscedMinSumDecoder
+from rust_qldpc import AscedSpaDecoder
 
 # %%
 
@@ -33,58 +33,6 @@ def build_bb_code(N: int):
     return code
 
 
-@nb.jit(nopython=True)
-def gf2_rank(A: np.ndarray) -> int:
-    M = A.copy()
-    m, n = M.shape
-    rank = 0
-    col = 0
-
-    while col < n and rank < m:
-        pivot = np.argmax(M[rank:, col]) + rank
-
-        if M[pivot, col] == 0:
-            col += 1
-            continue
-
-        if pivot != rank:
-            tmp = M[rank].copy()
-            M[rank] = M[pivot]
-            M[pivot] = tmp
-
-        for r in range(m):
-            if r != rank and M[r, col]:
-                M[r] ^= M[rank]
-
-        rank += 1
-        col += 1
-
-    return rank
-
-
-@nb.jit(nopython=True, parallel=True)
-def check_if_in_row_space(errors, estimates, H_dense, rank_H):
-    """
-    True for each (error, estimate) whose residual lies in the PCM rowspace.
-
-    When the residual `r = error ^ estimate` lies in the PCM rowspace, it is a
-    stabilizer, i.e., the estimate only differs from the actual error by a
-    stabilizer. Decoding was thus successful.
-    """
-    batch = errors.shape[0]
-    m, n = H_dense.shape
-    in_rowspace = np.empty(batch, dtype=np.bool_)
-
-    for i in nb.prange(batch):
-        residual = errors[i] ^ estimates[i]
-        A = np.empty((m + 1, n), dtype=np.uint8)
-        A[:m] = H_dense
-        A[m] = residual
-        in_rowspace[i] = gf2_rank(A) == rank_H
-
-    return in_rowspace
-
-
 @nb.njit(cache=True)
 def compute_syndrome_batch(errors, H_col_indices, H_indptr, m):
     """
@@ -106,39 +54,32 @@ def compute_syndrome_batch(errors, H_col_indices, H_indptr, m):
 
 def simulate_LER_batch(
     H: csr_matrix,
+    L: csr_matrix,
     p: float,
-    decoder: AscedMinSumDecoder,
+    decoder: AscedSpaDecoder,
     max_trials: int,
     seed: int,
     target_errors: int,
     batch_size: int = 64,
 ):
-    np.random.seed(seed)
-
-    p_err = p
-    # p_err = 2.0 * p / 3.0
+    rng = np.random.default_rng(seed)
 
     H_dense = H.todense()
     _, n = H_dense.shape
-    rank_H = gf2_rank(H_dense)
-
-    # errors = (np.random.random((max_trials, n)) < p).astype(np.uint8)
-    # s = compute_syndrome_batch(errors, H.indices, H.indptr, m)
-    #
-    # s_split = s.reshape((100, -1, s.shape[1]))
 
     logical_errors = 0
     total_trials = 0
 
+    pbar = tqdm(total=target_errors)
     while total_trials < max_trials:
         current_batch_size = min(batch_size, max_trials - total_trials)
         if current_batch_size <= 0:
             break
 
-        # Compute error pattern
+        # Compute error patterns and syndromes
 
-        errors = np.random.binomial(1, p_err, (current_batch_size, n)).astype(np.uint8)
-        syndromes = (H @ errors.T).T.astype(np.uint8) % 2
+        errors = (rng.random((current_batch_size, n)) < p).astype(np.uint8)
+        syndromes = (H @ errors.T % 2).T.astype(np.uint8)
 
         # Decode
 
@@ -146,29 +87,15 @@ def simulate_LER_batch(
 
         # Check for logical errors
 
-        in_rowspace = check_if_in_row_space(errors, estimates, H_dense, rank_H)
+        residuals = errors ^ estimates
+        num_errors = (np.any((L @ residuals.T) % 2, axis=0)).sum()
 
         total_trials += current_batch_size
-        logical_errors += (~in_rowspace).sum()
+        logical_errors += num_errors
+        pbar.update(num_errors)
 
         if logical_errors >= target_errors:
             break
-
-    # for s_batch in tqdm(s_split):
-    #     if num_errors >= target_errors:
-    #         break
-    #
-    #     e_hat = decoder.decode_batch(s_batch)
-    #     s_hat = compute_syndrome_batch(e_hat, H.indices, H.indptr, m)
-    #
-    #     in_rowspace = check_if_in_row_space(errors, e_hat, H_dense, rank_H)
-    #
-    #     total_trials += current_batch_size
-    #     logical_errors += (~in_rowspace).sum()
-    #
-    #     # TODO: This is not the logical error rate
-    #     num_errors += np.sum(((s_batch - s_hat) % 2).any(axis=1))
-    #     num_trials += s_batch.shape[0]
 
     LER = logical_errors / total_trials
 
@@ -197,12 +124,13 @@ trials = []
 for p in ps:
     code = build_bb_code(N)
 
-    priors = np.zeros(code.hz.shape[1]) + p
+    priors = np.zeros(code.hx.shape[1]) + p
     channel_llrs = np.log((1 - priors) / priors)
 
-    H_csr = csr_matrix(code.hz)
+    H_csr = csr_matrix(code.hx)
+    L_csr = csr_matrix(code.lx)
 
-    decoder = AscedMinSumDecoder(
+    decoder = AscedSpaDecoder(
         H_csr,
         priors=priors,
         delta=delta,
@@ -212,15 +140,17 @@ for p in ps:
     )
 
     LER, num_trials = simulate_LER_batch(
-        H_csr, p, decoder, max_trials, seed, target_errors
+        H_csr, L_csr, p, decoder, max_trials, seed, target_errors
     )
     LERs.append(LER)
     trials.append(num_trials)
     print(f"p: {p:.3f}, LER: {LER:.6f}")
 
 LERs = np.array(LERs)
-jrials = np.array(trials)
+trials = np.array(trials)
 sigma = np.sqrt(LERs * (1 - LERs) / trials)
+
+print(sigma)
 
 
 LERs_original_impl = [
@@ -237,13 +167,16 @@ plt.plot(ps, LERs_original_impl, label="Original implementation")
 plt.errorbar(
     ps,
     LERs,
-    yerr=sigma,
+    yerr=3 * sigma,
     label="Own results",
     capsize=4,
 )
 
 plt.yscale("log")
-plt.title("Logical error rate for ")
+plt.title(
+    "Logical error rate for [[144,12,12]] BB code under depolarizing "
+    "noise and aSCED decoding"
+)
 plt.xlabel("Physical Error Rate")
 plt.ylabel("Logical Error Rate (LER)")
 plt.grid()
