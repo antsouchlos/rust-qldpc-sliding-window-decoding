@@ -19,9 +19,11 @@ pub struct SlidingWindowSettings {
 }
 
 pub trait InnerWindowDecoder: Decoder {
+    type Settings: Clone;
+
     fn new(
         settings: Self::Settings,
-        pcm: &ParityCheckMatrix,
+        pcm: &CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self;
 
@@ -167,7 +169,7 @@ where
 {
     pub fn new(
         settings: SlidingWindowSettings,
-        inner_settings: <InnerDecoder as Decoder>::Settings,
+        inner_settings: InnerDecoder::Settings,
         H: &CsMat<u8>,
         m: usize,
         num_rounds: usize,
@@ -180,14 +182,7 @@ where
         let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
         let overlap_info = get_overlap_info(&window_borders);
 
-        let mut win_pcms =
-            Vec::<ParityCheckMatrix>::with_capacity(win_hs.len());
-        for win_h in win_hs {
-            let pcm = ParityCheckMatrix::new(&win_h);
-            win_pcms.push(pcm);
-        }
-
-        let window_decoders = win_pcms
+        let window_decoders = win_hs
             .iter()
             .zip(win_llrs)
             .map(|(pcm, channel_llrs)| {
@@ -195,7 +190,10 @@ where
             })
             .collect();
 
-        win_pcms.push(ParityCheckMatrix::new(H));
+        let win_pcms: Vec<ParityCheckMatrix> = win_hs
+            .iter()
+            .map(|win_h| ParityCheckMatrix::new(&win_h))
+            .collect();
 
         Self {
             settings,
@@ -226,8 +224,6 @@ impl<Engine> Decoder for SlidingWindowDecoder<Engine>
 where
     Engine: InnerWindowDecoder,
 {
-    type Settings = SlidingWindowSettings;
-
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
         let mut e_hat_total = Vec::<u8>::with_capacity(self.total_n);
 

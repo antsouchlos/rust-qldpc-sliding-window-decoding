@@ -1,5 +1,8 @@
+use sprs::CsMat;
+
 use crate::decoders::{
     Decoder,
+    asced::InnerAscedDecoder,
     engine::{AccessEngineInternals, BpComputeEngine, ParityCheckMatrix},
     sliding_window::InnerWindowDecoder,
 };
@@ -50,8 +53,6 @@ impl<Engine> Decoder for StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
 {
-    type Settings = StandardBpSettings;
-
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
         let mut x_hat = vec![0u8; self.pcm.cols()];
 
@@ -74,17 +75,20 @@ impl<Engine> InnerWindowDecoder for StandardBpDecoder<Engine>
 where
     Engine: AccessEngineInternals,
 {
+    type Settings = StandardBpSettings;
+
     fn new(
-        settings: Self::Settings,
-        pcm: &ParityCheckMatrix,
+        settings: StandardBpSettings,
+        h: &CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self {
-        let mut engine = Engine::new(pcm);
+        let pcm = ParityCheckMatrix::new(&h);
+        let mut engine = Engine::new(&pcm);
         engine.set_channel_llrs(channel_llrs);
 
         Self {
             settings,
-            pcm: pcm.clone(),
+            pcm,
             engine,
         }
     }
@@ -111,6 +115,25 @@ where
 
     fn set_channel_llr(&mut self, i: usize, llr: f64) {
         self.engine.set_channel_llr(i, llr);
+    }
+
+    fn reset(&mut self) {
+        self.engine.reset();
+    }
+}
+
+impl<Engine> InnerAscedDecoder for StandardBpDecoder<Engine>
+where
+    Engine: BpComputeEngine,
+{
+    type Settings = StandardBpSettings;
+
+    fn new(
+        settings: Self::Settings,
+        pcm: &sprs::CsMat<u8>,
+        channel_llrs: &[f64],
+    ) -> Self {
+        Self::new(settings, &ParityCheckMatrix::new(pcm), channel_llrs)
     }
 
     fn reset(&mut self) {
