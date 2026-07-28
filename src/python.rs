@@ -6,7 +6,9 @@ use rayon::prelude::*;
 use sprs::CsMat;
 
 use crate::decoders::Decoder;
-use crate::decoders::asced::{AscedDecoder, AscedSettings};
+use crate::decoders::asced::{
+    AscedDecoder, AscedSettings, WindowAscedSettingsWrapper,
+};
 use crate::decoders::bp::{StandardBpDecoder, StandardBpSettings};
 use crate::decoders::engine::ParityCheckMatrix;
 use crate::decoders::engine::min_sum::MinSumComputeEngine;
@@ -585,6 +587,214 @@ impl PyAscedSpaDecoder {
     }
 }
 
+#[gen_stub_pyclass]
+#[pyclass(name = "SlidingWindowAscedSpaDecoder")]
+pub struct PySlidingWindowAscedSpaDecoder {
+    decoder:
+        SlidingWindowDecoder<AscedDecoder<StandardBpDecoder<SpaComputeEngine>>>,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PySlidingWindowAscedSpaDecoder {
+    #[new]
+    #[allow(non_snake_case)]
+    pub fn new(
+        #[gen_stub(override_type(
+            type_repr = "scipy.sparse.csr_matrix",
+            imports = ("scipy.sparse",)
+        ))]
+        H: &Bound<'_, PyAny>,
+        m: usize,
+        num_rounds: usize,
+        W: usize,
+        F: usize,
+        priors: PyReadonlyArray1<'_, f64>,
+        max_iter: usize,
+        warm_start: bool,
+        splitter_weight: usize,
+        num_batches: usize,
+        delta: usize,
+    ) -> PyResult<Self> {
+        let h = extract_parity_check_matrix(H)?;
+
+        let priors = priors.as_slice()?;
+        if priors.len() != h.cols() {
+            return Err(PyValueError::new_err(
+                "channel_llrs.len() must equal ncols",
+            ));
+        }
+
+        let channel_llrs = priors
+            .iter()
+            .map(|p| (1.0 - p).ln() - p.ln())
+            .collect::<Vec<_>>();
+
+        if channel_llrs.len() != h.cols() {
+            return Err(PyValueError::new_err(
+                "channel_llrs.len() must equal ncols",
+            ));
+        }
+
+        Ok(Self {
+            decoder: SlidingWindowDecoder::new(
+                SlidingWindowSettings { warm_start, W, F },
+                WindowAscedSettingsWrapper {
+                    inner_settings: StandardBpSettings { max_iter },
+                    asced_settings: AscedSettings {
+                        splitter_weight,
+                        num_batches,
+                        delta,
+                    },
+                },
+                &h,
+                m,
+                num_rounds,
+                &channel_llrs,
+            ),
+        })
+    }
+
+    pub fn decode<'py>(
+        &mut self,
+        py: Python<'py>,
+        syndrome: Vec<u8>,
+    ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        let result = self.decoder.decode(&syndrome);
+        Ok(PyArray1::from_vec(py, result.to_vec()))
+    }
+
+    pub fn decode_batch<'py>(
+        &mut self,
+        py: Python<'py>,
+        syndromes: PyReadonlyArray2<'py, u8>,
+    ) -> PyResult<Bound<'py, PyArray2<u8>>> {
+        let syndromes_array = syndromes.as_array();
+        let num_syndromes = syndromes_array.shape()[0];
+
+        let syndromes_vec: Vec<Vec<u8>> = (0..num_syndromes)
+            .map(|i| syndromes_array.row(i).to_vec())
+            .collect();
+
+        let mut template = self.decoder.clone();
+        template.reset();
+
+        let results: Vec<Vec<u8>> = py.detach(|| {
+            syndromes_vec
+                .par_iter()
+                .map(|s| template.clone().decode(s).to_vec())
+                .collect()
+        });
+
+        PyArray2::from_vec2(py, &results)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+}
+
+#[gen_stub_pyclass]
+#[pyclass(name = "SlidingWindowAscedMinSumDecoder")]
+pub struct PySlidingWindowAscedMinSumDecoder {
+    decoder:
+        SlidingWindowDecoder<AscedDecoder<StandardBpDecoder<MinSumComputeEngine>>>,
+}
+
+#[gen_stub_pymethods]
+#[pymethods]
+impl PySlidingWindowAscedMinSumDecoder {
+    #[new]
+    #[allow(non_snake_case)]
+    pub fn new(
+        #[gen_stub(override_type(
+            type_repr = "scipy.sparse.csr_matrix",
+            imports = ("scipy.sparse",)
+        ))]
+        H: &Bound<'_, PyAny>,
+        m: usize,
+        num_rounds: usize,
+        W: usize,
+        F: usize,
+        priors: PyReadonlyArray1<'_, f64>,
+        max_iter: usize,
+        warm_start: bool,
+        splitter_weight: usize,
+        num_batches: usize,
+        delta: usize,
+    ) -> PyResult<Self> {
+        let h = extract_parity_check_matrix(H)?;
+
+        let priors = priors.as_slice()?;
+        if priors.len() != h.cols() {
+            return Err(PyValueError::new_err(
+                "channel_llrs.len() must equal ncols",
+            ));
+        }
+
+        let channel_llrs = priors
+            .iter()
+            .map(|p| (1.0 - p).ln() - p.ln())
+            .collect::<Vec<_>>();
+
+        if channel_llrs.len() != h.cols() {
+            return Err(PyValueError::new_err(
+                "channel_llrs.len() must equal ncols",
+            ));
+        }
+
+        Ok(Self {
+            decoder: SlidingWindowDecoder::new(
+                SlidingWindowSettings { warm_start, W, F },
+                WindowAscedSettingsWrapper {
+                    inner_settings: StandardBpSettings { max_iter },
+                    asced_settings: AscedSettings {
+                        splitter_weight,
+                        num_batches,
+                        delta,
+                    },
+                },
+                &h,
+                m,
+                num_rounds,
+                &channel_llrs,
+            ),
+        })
+    }
+
+    pub fn decode<'py>(
+        &mut self,
+        py: Python<'py>,
+        syndrome: Vec<u8>,
+    ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        let result = self.decoder.decode(&syndrome);
+        Ok(PyArray1::from_vec(py, result.to_vec()))
+    }
+
+    pub fn decode_batch<'py>(
+        &mut self,
+        py: Python<'py>,
+        syndromes: PyReadonlyArray2<'py, u8>,
+    ) -> PyResult<Bound<'py, PyArray2<u8>>> {
+        let syndromes_array = syndromes.as_array();
+        let num_syndromes = syndromes_array.shape()[0];
+
+        let syndromes_vec: Vec<Vec<u8>> = (0..num_syndromes)
+            .map(|i| syndromes_array.row(i).to_vec())
+            .collect();
+
+        let mut template = self.decoder.clone();
+        template.reset();
+
+        let results: Vec<Vec<u8>> = py.detach(|| {
+            syndromes_vec
+                .par_iter()
+                .map(|s| template.clone().decode(s).to_vec())
+                .collect()
+        });
+
+        PyArray2::from_vec2(py, &results)
+            .map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+}
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyStandardMinSumDecoder>()?;
     m.add_class::<PyStandardSpaDecoder>()?;
@@ -592,5 +802,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySlidingWindowSpaDecoder>()?;
     m.add_class::<PyAscedMinSumDecoder>()?;
     m.add_class::<PyAscedSpaDecoder>()?;
+    m.add_class::<PySlidingWindowAscedSpaDecoder>()?;
+    m.add_class::<PySlidingWindowAscedMinSumDecoder>()?;
     Ok(())
 }

@@ -2,11 +2,10 @@ use std::collections::HashSet;
 
 use sprs::CsMat;
 
-use crate::decoders::{Decoder, engine::ParityCheckMatrix};
+use crate::decoders::{
+    Decoder, engine::ParityCheckMatrix, sliding_window::InnerWindowDecoder,
+};
 use rand::{Rng, RngExt, SeedableRng};
-
-/// [2] L. Wursthorn, et al., "Affine Subcode Ensemble Decoding for
-///     Degeneracy-Aware Quantum Error Correction," arXiv:2605.06547, 2026.
 
 /// This function implements algorithm 1 from [1]: It generates additional
 /// rows for a PCM that don't create 4-cycles.
@@ -142,6 +141,7 @@ pub trait InnerAscedDecoder: Decoder {
     fn reset(&mut self);
 }
 
+#[derive(Clone)]
 pub struct AscedSettings {
     /// Hamming weight of a splitter row
     pub splitter_weight: usize,
@@ -151,6 +151,13 @@ pub struct AscedSettings {
     pub delta: usize,
 }
 
+/// Implementation of an affine subcode ensemble decoder (aSCED) [2] for
+/// binary check matrices.
+///
+/// # References
+///  
+/// [2] L. Wursthorn, et al., "Affine Subcode Ensemble Decoding for
+///     Degeneracy-Aware Quantum Error Correction," arXiv:2605.06547, 2026.
 #[derive(Clone)]
 pub struct AscedDecoder<InnerDecoder>
 where
@@ -275,5 +282,73 @@ where
             .filter(|estimate| self.pcm.compute_syndrome(estimate) == s)
             .min_by_key(|estimate| estimate.iter().filter(|&&b| b != 0).count())
             .unwrap_or(first_estimate)
+    }
+}
+
+pub struct WindowAscedSettingsWrapper<InnerDecoder>
+where
+    InnerDecoder: InnerAscedDecoder,
+{
+    pub inner_settings: InnerDecoder::Settings,
+    pub asced_settings: AscedSettings,
+}
+
+impl<InnerDecoder> Clone for WindowAscedSettingsWrapper<InnerDecoder>
+where
+    InnerDecoder: InnerAscedDecoder,
+{
+    fn clone(&self) -> Self {
+        Self {
+            inner_settings: self.inner_settings.clone(),
+            asced_settings: self.asced_settings.clone(),
+        }
+    }
+}
+
+impl<InnerDecoder> InnerWindowDecoder for AscedDecoder<InnerDecoder>
+where
+    InnerDecoder: InnerAscedDecoder,
+{
+    type Settings = WindowAscedSettingsWrapper<InnerDecoder>;
+
+    fn new(
+        settings: Self::Settings,
+        h: &CsMat<u8>,
+        channel_llrs: &[f64],
+    ) -> Self {
+        Self::new(
+            settings.asced_settings,
+            settings.inner_settings,
+            &h,
+            channel_llrs,
+        )
+    }
+
+    fn get_cn_to_vn_msg(&self, _edge_id: super::engine::EdgeId) -> f64 {
+        panic!("AscedDecoder does not support get_cn_to_vn_msg at this time.")
+    }
+
+    fn get_vn_to_cn_msg(&self, _edge_id: super::engine::EdgeId) -> f64 {
+        panic!("AscedDecoder does not support get_vn_to_cn_msg at this time.")
+    }
+
+    fn get_channel_llr(&self, _i: usize) -> f64 {
+        panic!("AscedDecoder does not support get_channel_llr at this time.")
+    }
+
+    fn set_cn_to_vn_msg(&mut self, _edge_id: super::engine::EdgeId, _msg: f64) {
+        panic!("AscedDecoder does not support set_cn_to_vn_msg at this time.")
+    }
+
+    fn set_vn_to_cn_msg(&mut self, _edge_id: super::engine::EdgeId, _msg: f64) {
+        panic!("AscedDecoder does not support set_vn_to_cn_msg at this time.")
+    }
+
+    fn set_channel_llr(&mut self, _i: usize, _llr: f64) {
+        panic!("AscedDecoder does not support set_channel_llr at this time.")
+    }
+
+    fn reset(&mut self) {
+        self.reset()
     }
 }
