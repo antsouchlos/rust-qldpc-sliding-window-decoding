@@ -165,6 +165,7 @@ where
 {
     decoder_ensemble: Vec<InnerDecoderWrapper<InnerDecoder>>,
     pcm: ParityCheckMatrix,
+    last_chosen: Option<usize>,
 }
 
 impl<InnerDecoder> AscedDecoder<InnerDecoder>
@@ -256,12 +257,7 @@ where
         Self {
             decoder_ensemble,
             pcm: ParityCheckMatrix::new(h),
-        }
-    }
-
-    pub fn reset(&mut self) {
-        for decoder in &mut self.decoder_ensemble {
-            decoder.reset();
+            last_chosen: None,
         }
     }
 }
@@ -271,17 +267,22 @@ where
     InnerDecoder: InnerAscedDecoder,
 {
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
-        let mut decoders = self.decoder_ensemble.iter_mut();
+        let estimates: Vec<Vec<u8>> = self
+            .decoder_ensemble
+            .iter_mut()
+            .map(|d| d.decode(s))
+            .collect();
 
-        // Fallback in case no estimate passes the syndrome check
-        let first_estimate = decoders.next().map(|d| d.decode(s)).unwrap();
+        let (chosen_idx, best_est) = estimates
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| self.pcm.compute_syndrome(e) == s)
+            .min_by_key(|(_, e)| e.iter().filter(|&&b| b != 0).count())
+            .map(|(i, e)| (Some(i), e.clone()))
+            .unwrap_or_else(|| (Some(0), estimates[0].clone()));
 
-        decoders
-            .map(|decoder| decoder.decode(s))
-            .chain(std::iter::once(first_estimate.clone()))
-            .filter(|estimate| self.pcm.compute_syndrome(estimate) == s)
-            .min_by_key(|estimate| estimate.iter().filter(|&&b| b != 0).count())
-            .unwrap_or(first_estimate)
+        self.last_chosen = chosen_idx;
+        best_est
     }
 }
 
@@ -307,7 +308,7 @@ where
 
 impl<InnerDecoder> InnerWindowDecoder for AscedDecoder<InnerDecoder>
 where
-    InnerDecoder: InnerAscedDecoder,
+    InnerDecoder: InnerAscedDecoder + InnerWindowDecoder,
 {
     type Settings = WindowAscedSettingsWrapper<InnerDecoder>;
 
@@ -324,31 +325,52 @@ where
         )
     }
 
-    fn get_cn_to_vn_msg(&self, _edge_id: super::engine::EdgeId) -> f64 {
-        panic!("AscedDecoder does not support get_cn_to_vn_msg at this time.")
+    fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
+        self.decoder_ensemble[self
+            .last_chosen
+            .expect("AscedDecoder: get_cn_to_vn_msg called before decode")]
+        .decoder
+        .get_cn_to_vn_msg(edge_id)
     }
 
-    fn get_vn_to_cn_msg(&self, _edge_id: super::engine::EdgeId) -> f64 {
-        panic!("AscedDecoder does not support get_vn_to_cn_msg at this time.")
+    fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
+        self.decoder_ensemble[self
+            .last_chosen
+            .expect("AscedDecoder: get_vn_to_cn_msg called before decode")]
+        .decoder
+        .get_vn_to_cn_msg(edge_id)
     }
 
-    fn get_channel_llr(&self, _i: usize) -> f64 {
-        panic!("AscedDecoder does not support get_channel_llr at this time.")
+    fn get_channel_llr(&self, i: usize) -> f64 {
+        self.decoder_ensemble[self
+            .last_chosen
+            .expect("AscedDecoder: get_channel_llr called before decode")]
+        .decoder
+        .get_channel_llr(i)
     }
 
-    fn set_cn_to_vn_msg(&mut self, _edge_id: super::engine::EdgeId, _msg: f64) {
-        panic!("AscedDecoder does not support set_cn_to_vn_msg at this time.")
+    fn set_cn_to_vn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
+        for wrapper in &mut self.decoder_ensemble {
+            wrapper.decoder.set_cn_to_vn_msg(edge_id, msg);
+        }
     }
 
-    fn set_vn_to_cn_msg(&mut self, _edge_id: super::engine::EdgeId, _msg: f64) {
-        panic!("AscedDecoder does not support set_vn_to_cn_msg at this time.")
+    fn set_vn_to_cn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
+        for wrapper in &mut self.decoder_ensemble {
+            wrapper.decoder.set_vn_to_cn_msg(edge_id, msg);
+        }
     }
 
-    fn set_channel_llr(&mut self, _i: usize, _llr: f64) {
-        panic!("AscedDecoder does not support set_channel_llr at this time.")
+    fn set_channel_llr(&mut self, i: usize, llr: f64) {
+        for wrapper in &mut self.decoder_ensemble {
+            wrapper.decoder.set_channel_llr(i, llr);
+        }
     }
 
     fn reset(&mut self) {
-        self.reset()
+        for decoder in &mut self.decoder_ensemble {
+            decoder.reset();
+        }
+        self.last_chosen = None;
     }
 }

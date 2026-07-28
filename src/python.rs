@@ -14,7 +14,7 @@ use crate::decoders::engine::ParityCheckMatrix;
 use crate::decoders::engine::min_sum::MinSumComputeEngine;
 use crate::decoders::engine::spa::SpaComputeEngine;
 use crate::decoders::sliding_window::{
-    SlidingWindowDecoder, SlidingWindowSettings,
+    InnerWindowDecoder, SlidingWindowDecoder, SlidingWindowSettings,
 };
 
 fn extract_parity_check_matrix(h: &Bound<'_, PyAny>) -> PyResult<CsMat<u8>> {
