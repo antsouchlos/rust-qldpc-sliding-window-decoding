@@ -15,11 +15,17 @@ $ pip install .
 ### Usage
 
 - Set up environment
-    ```bash
-    $ uv venv --python 3.12
-    $ . .venv/bin/activate
-    $ uv pip install quits
-    ```
+    - With conda (automatically installs python, rust, maturin):
+        ```bash
+        $ conda env create -f environment.yml
+        $ conda activate rust-qldpc
+        ```
+    - With uv (requires manual installation of certain dependencies):
+        ```bash
+        $ uv venv --python 3.12
+        $ . .venv/bin/activate
+        $ uv pip install quits
+        ```
 - Run unit tests
     ```bash
     $ export LD_LIBRARY_PATH=$(python -c "import sysconfig; print(sysconfig.get_config_var('LIBDIR'))")
@@ -28,7 +34,7 @@ $ pip install .
 - Compile Python library
     ```bash
     $ maturin develop --release
-    $ uv run scripts/test_simple_bp.py
+    $ python scripts/test_simple_bp.py
     ```
 
 ### Generating type stubs
