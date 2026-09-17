@@ -101,6 +101,8 @@ impl PyStandardMinSumDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        self.decoder.reset();
+
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result.to_vec()))
     }
@@ -191,6 +193,8 @@ impl PyStandardSpaDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        self.decoder.reset();
+
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result.to_vec()))
     }
@@ -292,6 +296,8 @@ impl PySlidingWindowMinSumDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        self.decoder.reset();
+
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result.to_vec()))
     }
@@ -394,6 +400,8 @@ impl PySlidingWindowSpaDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        self.decoder.reset();
+
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result.to_vec()))
     }
@@ -491,6 +499,8 @@ impl PyAscedMinSumDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        self.decoder.reset();
+
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result.to_vec()))
     }
@@ -589,6 +599,8 @@ impl PyAscedSpaDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        self.decoder.reset();
+
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result.to_vec()))
     }
@@ -700,6 +712,8 @@ impl PySlidingWindowAscedSpaDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        self.decoder.reset();
+
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result.to_vec()))
     }
@@ -811,6 +825,8 @@ impl PySlidingWindowAscedMinSumDecoder {
         py: Python<'py>,
         syndrome: Vec<u8>,
     ) -> PyResult<Bound<'py, PyArray1<u8>>> {
+        self.decoder.reset();
+
         let result = self.decoder.decode(&syndrome);
         Ok(PyArray1::from_vec(py, result.to_vec()))
     }
