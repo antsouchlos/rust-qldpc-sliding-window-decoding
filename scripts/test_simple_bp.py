@@ -110,7 +110,7 @@ def simulate_LER_batch(
 
 
 seed = 1
-num_rounds = 2
+num_rounds = 6
 num_trials = 10000
 max_iter = 32
 
@@ -151,6 +151,7 @@ for p in ps:
         csr_matrix(check_matrix),
         priors=np.array(priors, dtype=np.float64),
         max_iter=max_iter,
+        alpha=1.0,
     )
 
     LER = simulate_LER_batch(
@@ -228,7 +229,9 @@ for LERs, label in zip(
     )
 
 plt.yscale("log")
-plt.title("Logical Error Rate for [72,12,6] BB Code Under Circuit Level Noise")
+plt.title(
+    "Logical Error Rate (Z Basis) for [72,12,6] BB Code Under Circuit Level Noise"
+)
 plt.xlabel("Physical Error Rate")
 plt.ylabel("Logical Error Rate (LER)")
 plt.grid()
