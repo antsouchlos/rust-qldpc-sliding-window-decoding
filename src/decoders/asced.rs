@@ -277,16 +277,22 @@ where
             .map(|d| d.decode(s))
             .collect();
 
-        let (chosen_idx, best_est) = estimates
+        let best = estimates
             .iter()
             .enumerate()
             .filter(|(_, e)| self.pcm.compute_syndrome(e) == s)
-            .min_by_key(|(_, e)| e.iter().filter(|&&b| b != 0).count())
-            .map(|(i, e)| (Some(i), e.clone()))
-            .unwrap_or_else(|| (Some(0), estimates[0].clone()));
+            .min_by_key(|(_, e)| e.iter().filter(|&&b| b != 0).count());
 
-        self.last_chosen = chosen_idx;
-        best_est
+        match best {
+            Some((i, e)) => {
+                self.last_chosen = Some(i);
+                e.clone()
+            }
+            None => {
+                self.last_chosen = None;
+                estimates[0].clone()
+            }
+        }
     }
 }
 
