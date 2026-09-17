@@ -1,7 +1,7 @@
 pub mod min_sum;
 pub mod spa;
 
-use std::ops::{Bound, RangeBounds};
+use std::ops::RangeBounds;
 
 use sprs::CsMat;
 
@@ -20,6 +20,11 @@ pub struct ParityCheckMatrix {
 
 impl ParityCheckMatrix {
     pub fn new(h: &CsMat<u8>) -> Self {
+        assert!(
+            h.rows() < (1 << 16) && h.cols() < (1 << 16),
+            "PCM dimensions must be less than 65536 for edge id packing"
+        );
+
         Self { h: h.to_csr() }
     }
 
@@ -33,12 +38,10 @@ impl ParityCheckMatrix {
         R2: RangeBounds<usize>,
     {
         // These bounds are due to the way the edge IDs are generated
-        if let Bound::Included(&end) = rows.end_bound() {
-            assert!(end < (1 << 16), "row end must be less than 65536");
-        }
-        if let Bound::Included(&end) = cols.end_bound() {
-            assert!(end < (1 << 16), "col end must be less than 65536");
-        }
+        assert!(
+            self.h.rows() < (1 << 16) && self.h.cols() < (1 << 16),
+            "PCM dimensions must be less than 65536 for edge id packing"
+        );
 
         self.h
             .outer_iterator()

@@ -39,6 +39,11 @@ pub fn get_window_borders(
     W: usize,
     F: usize,
 ) -> Vec<((usize, usize), (usize, usize))> {
+    assert!(
+        W > F,
+        "W must be greater than F, otherwise consecutive windows do not overlap"
+    );
+
     let num_windows = get_num_windows(num_rounds, W, F);
 
     let i_max = |j: usize| {
@@ -93,21 +98,48 @@ pub fn get_overlap_info(
         Vec::<(usize, usize)>::with_capacity(window_borders.len());
 
     for idx in 0..window_borders.len() - 1 {
-        let row_begin = window_borders[idx + 1].0.0 as isize
-            - window_borders[idx].0.0 as isize;
-        let col_begin = window_borders[idx + 1].0.1 as isize
-            - window_borders[idx].0.1 as isize;
+        let row_begin = window_borders[idx + 1]
+            .0
+            .0
+            .checked_sub(window_borders[idx].0.0)
+            .unwrap_or_else(|| {
+                panic!("window {} starts before window {idx}", idx + 1)
+            });
+        let col_begin = window_borders[idx + 1]
+            .0
+            .1
+            .checked_sub(window_borders[idx].0.1)
+            .unwrap_or_else(|| {
+                panic!("window {} starts before window {idx}", idx + 1)
+            });
 
-        begin_positions.push((row_begin as usize, col_begin as usize));
+        begin_positions.push((row_begin, col_begin));
     }
 
     for idx in 1..window_borders.len() {
-        let row_end = window_borders[idx - 1].1.0 as isize
-            - window_borders[idx].0.0 as isize;
-        let col_end = window_borders[idx - 1].1.1 as isize
-            - window_borders[idx].0.1 as isize;
+        let row_end = window_borders[idx - 1]
+            .1
+            .0
+            .checked_sub(window_borders[idx].0.0)
+            .unwrap_or_else(|| {
+                panic!(
+                    "windows {} and {idx} do not overlap in rows; \
+                     W must be greater than F",
+                    idx - 1
+                )
+            });
+        let col_end = window_borders[idx - 1]
+            .1
+            .1
+            .checked_sub(window_borders[idx].0.1)
+            .unwrap_or_else(|| {
+                panic!(
+                    "windows {} and {idx} do not overlap in columns",
+                    idx - 1
+                )
+            });
 
-        end_positions.push((row_end as usize, col_end as usize));
+        end_positions.push((row_end, col_end));
     }
 
     OverlapInfo {
@@ -123,13 +155,13 @@ pub fn split_pcm(
 ) -> Vec<CsMat<u8>> {
     let mut result = Vec::<CsMat<u8>>::with_capacity(window_borders.len());
 
+    #[allow(non_snake_case)]
+    let H_csr = H.to_csr();
+
     for &((row_begin, col_begin), (row_end, col_end)) in window_borders {
         let mut triplets = Vec::<(usize, usize, u8)>::new();
 
         for row in row_begin..row_end + 1 {
-            #[allow(non_snake_case)]
-            let H_csr = H.to_csr();
-
             let row_vec = H_csr.outer_view(row).unwrap();
             for (col, &val) in row_vec.iter() {
                 if col >= col_begin && col <= col_end {
