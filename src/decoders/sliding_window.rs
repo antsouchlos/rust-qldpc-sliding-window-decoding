@@ -191,13 +191,22 @@ where
 
         let prev_win_rows = prev_win_overlap_start.0..;
         let prev_win_cols = prev_win_overlap_start.1..;
-        let src_edges = pcm1.slice(&prev_win_rows, &prev_win_cols);
+        let src_edges: Vec<EdgeId> =
+            pcm1.slice(&prev_win_rows, &prev_win_cols).collect();
 
         let curr_win_rows = ..=curr_win_overlap_end.0;
         let curr_win_cols = ..=curr_win_overlap_end.1;
-        let dest_edges = pcm2.slice(&curr_win_rows, &curr_win_cols);
+        let dest_edges: Vec<EdgeId> =
+            pcm2.slice(&curr_win_rows, &curr_win_cols).collect();
 
-        for (e_src, e_dst) in src_edges.zip(dest_edges) {
+        assert_eq!(
+            src_edges.len(),
+            dest_edges.len(),
+            "overlap of windows {} and {win_idx} has mismatched edge counts",
+            win_idx - 1
+        );
+
+        for (e_src, e_dst) in src_edges.into_iter().zip(dest_edges) {
             let msg = self.window_decoders[win_idx - 1].get_cn_to_vn_msg(e_src);
             self.window_decoders[win_idx].set_cn_to_vn_msg(e_dst, msg);
         }
