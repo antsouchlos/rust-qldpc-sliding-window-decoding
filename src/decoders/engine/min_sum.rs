@@ -58,8 +58,8 @@ impl BpComputeEngine for MinSumComputeEngine {
 
         let mut cn_ranges = Vec::with_capacity(num_cns);
         for j in 0..num_cns {
-            let start = pcm.h.indptr().index(j);
-            let end = pcm.h.indptr().index(j + 1);
+            let start = h_csr.indptr().index(j);
+            let end = h_csr.indptr().index(j + 1);
             cn_ranges.push(start..end);
         }
 
@@ -91,6 +91,7 @@ impl BpComputeEngine for MinSumComputeEngine {
             edge.msg_vn_to_cn = 0.0;
             edge.msg_cn_to_vn = 0.0;
         }
+        self.state.total_llrs.fill(0.0);
     }
 
     /// Perform check node update using the min-sum approximation.
@@ -177,11 +178,18 @@ impl MinSumComputeEngine {
         let i = (edge_id.0 & 0xFFFF) as usize;
         let j = (edge_id.0 >> 16) as usize;
 
-        self.state.vn_indices[i]
-            .iter()
-            .find(|&&k| self.state.edges[k].row == j)
-            .expect("Invalid edge id")
-            .clone()
+        // `edges` is built in row-major order, so `vn_indices[i]` is
+        // ascending in edge index and therefore ascending in `row`
+        // -> We can do a binary search
+        let neighbors = &self.state.vn_indices[i];
+        let pos = neighbors.partition_point(|&k| self.state.edges[k].row < j);
+
+        assert!(
+            pos < neighbors.len() && self.state.edges[neighbors[pos]].row == j,
+            "Invalid edge id"
+        );
+
+        neighbors[pos]
     }
 }
 
