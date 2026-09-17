@@ -711,27 +711,21 @@ where
     }
 
     fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
-        self.decoder_ensemble[self
-            .last_chosen
-            .expect("AscedDecoder: get_cn_to_vn_msg called before decode")]
-        .decoder
-        .get_cn_to_vn_msg(edge_id)
+        self.decoder_ensemble[self.last_chosen.unwrap_or(0)]
+            .decoder
+            .get_cn_to_vn_msg(edge_id)
     }
 
     fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
-        self.decoder_ensemble[self
-            .last_chosen
-            .expect("AscedDecoder: get_vn_to_cn_msg called before decode")]
-        .decoder
-        .get_vn_to_cn_msg(edge_id)
+        self.decoder_ensemble[self.last_chosen.unwrap_or(0)]
+            .decoder
+            .get_vn_to_cn_msg(edge_id)
     }
 
     fn get_channel_llr(&self, i: usize) -> f64 {
-        self.decoder_ensemble[self
-            .last_chosen
-            .expect("AscedDecoder: get_channel_llr called before decode")]
-        .decoder
-        .get_channel_llr(i)
+        self.decoder_ensemble[self.last_chosen.unwrap_or(0)]
+            .decoder
+            .get_channel_llr(i)
     }
 
     fn set_cn_to_vn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
