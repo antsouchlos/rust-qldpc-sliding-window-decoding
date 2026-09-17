@@ -29,6 +29,9 @@ fn generate_4_cycle_free_row(
 ) -> Option<(Vec<usize>, Vec<usize>)> {
     let mut new_row_indices = Vec::<usize>::with_capacity(row_weight);
 
+    let h_csr = h.to_csr();
+    let h_csc = h.to_csc();
+
     while new_row_indices.len() < row_weight {
         // Line 6
         if feasible_set.len() == 0 {
@@ -42,10 +45,16 @@ fn generate_4_cycle_free_row(
         new_row_indices.push(i_new);
 
         // Line 10
-        feasible_set.retain(|&l| {
-            (0..h.rows())
-                .all(|j| !(h.get(j, l).is_some() && h.get(j, i_new).is_some()))
-        });
+        let mut blocked = HashSet::<usize>::new();
+        if let Some(col) = h_csc.outer_view(i_new) {
+            for (j, _) in col.iter() {
+                if let Some(row) = h_csr.outer_view(j) {
+                    blocked.extend(row.indices().iter().copied());
+                }
+            }
+        }
+
+        feasible_set.retain(|l| !blocked.contains(l));
     }
 
     Some((new_row_indices, feasible_set))
