@@ -46,13 +46,17 @@ pub fn get_window_borders(
 
     let num_windows = get_num_windows(num_rounds, W, F);
 
-    let i_max = |j: usize| {
-        let H_csr = H.to_csr();
-        let row = H_csr.outer_view(j).unwrap();
-        let indices = row.indices();
-
-        indices.last().unwrap().clone()
-    };
+    let h_csr = H.to_csr();
+    let i_max_per_row: Vec<usize> = h_csr
+        .outer_iterator()
+        .enumerate()
+        .map(|(j, row)| {
+            *row.indices()
+                .last()
+                .unwrap_or_else(|| panic!("row {j} of H is empty"))
+        })
+        .collect();
+    let i_max = |j: usize| i_max_per_row[j];
 
     let mut window_borders =
         Vec::<((usize, usize), (usize, usize))>::with_capacity(
