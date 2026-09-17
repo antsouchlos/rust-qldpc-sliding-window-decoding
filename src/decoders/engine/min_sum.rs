@@ -133,6 +133,10 @@ impl BpComputeEngine for MinSumComputeEngine {
                 let extrinsic_mag =
                     if edge_idx == min1_idx { min2 } else { min1 };
 
+                // Without this clamp, on degree-one CNs the VN update yields
+                // inf - inf.
+                let extrinsic_mag = extrinsic_mag.min(1e6);
+
                 self.state.edges[edge_idx].msg_cn_to_vn =
                     self.alpha * extrinsic_sign * extrinsic_mag;
             }
@@ -258,6 +262,36 @@ mod tests {
         h.add_triplet(2, 6, 1);
 
         h.to_csr()
+    }
+
+    #[test]
+    fn test_degree_one_check_node_is_finite() {
+        let mut h = TriMat::<u8>::new((2, 2));
+        h.add_triplet(0, 0, 1);
+        h.add_triplet(1, 0, 1);
+        let h = h.to_csr();
+
+        let pcm = ParityCheckMatrix::new(&h);
+        let mut engine =
+            MinSumComputeEngine::new(&pcm, &MinSumSettings { alpha: 1.0 });
+        engine.set_channel_llrs(&[1.0, 1.0]);
+
+        engine.vn_update();
+        engine.cn_update(&[0, 0]);
+
+        assert!(
+            engine
+                .state
+                .edges
+                .iter()
+                .all(|e| e.msg_cn_to_vn.is_finite()),
+        );
+
+        engine.vn_update();
+
+        assert!(
+            engine.total_llrs().iter().all(|l| l.is_finite()),
+        );
     }
 
     #[test]
