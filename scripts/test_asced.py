@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import numba as nb
 import numpy as np
 from quits import BbCode
 from scipy.sparse import csr_matrix
@@ -31,25 +30,6 @@ def build_bb_code(N: int):
     # fmt: on
 
     return code
-
-
-@nb.njit(cache=True)
-def compute_syndrome_batch(errors, H_col_indices, H_indptr, m):
-    """
-    Compute binary syndrome s = H * error mod 2 for a batch of error vectors.
-
-    errors: 2D array of shape (batch_size, n), each row is an error vector.
-    Returns: 2D array of shape (batch_size, m).
-    """
-    batch_size = errors.shape[0]
-    syndromes = np.zeros((batch_size, m), dtype=np.uint8)
-    for b in range(batch_size):
-        for i in range(m):
-            s = 0
-            for idx in range(H_indptr[i], H_indptr[i + 1]):
-                s ^= errors[b, H_col_indices[idx]]
-            syndromes[b, i] = s
-    return syndromes
 
 
 def simulate_LER_batch(
