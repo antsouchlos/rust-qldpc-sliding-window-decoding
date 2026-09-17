@@ -173,6 +173,7 @@ for p in ps:
         priors,
         max_iter=max_iter,
         warm_start=False,
+        alpha=1.0,
     )
 
     LER = simulate_LER_batch(circuit, decoder, observable_matrix, num_trials, seed + 1)
