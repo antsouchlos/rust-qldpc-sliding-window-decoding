@@ -6,9 +6,7 @@ use rayon::prelude::*;
 use sprs::CsMat;
 
 use crate::decoders::Decoder;
-use crate::decoders::asced::{
-    AscedDecoder, AscedSettings, WindowAscedSettingsWrapper,
-};
+use crate::decoders::asced::{AscedDecoder, AscedSettings};
 use crate::decoders::bp::{StandardBpDecoder, StandardBpSettings};
 use crate::decoders::engine::ParityCheckMatrix;
 use crate::decoders::engine::min_sum::{MinSumComputeEngine, MinSumSettings};
@@ -272,10 +270,14 @@ impl PySlidingWindowMinSumDecoder {
 
         Ok(Self {
             decoder: SlidingWindowDecoder::new(
-                SlidingWindowSettings { warm_start, W, F },
-                StandardBpSettings {
-                    max_iter,
-                    engine_settings: MinSumSettings { alpha },
+                SlidingWindowSettings {
+                    warm_start,
+                    W,
+                    F,
+                    inner_settings: StandardBpSettings {
+                        max_iter,
+                        engine_settings: MinSumSettings { alpha },
+                    },
                 },
                 &h,
                 m,
@@ -368,11 +370,15 @@ impl PySlidingWindowSpaDecoder {
 
         Ok(Self {
             decoder: SlidingWindowDecoder::new(
-                SlidingWindowSettings { warm_start, W, F },
-                StandardBpSettings {
-                    max_iter,
-                    engine_settings: SpaSettings {
-                        ..Default::default()
+                SlidingWindowSettings {
+                    warm_start,
+                    W,
+                    F,
+                    inner_settings: StandardBpSettings {
+                        max_iter,
+                        engine_settings: SpaSettings {
+                            ..Default::default()
+                        },
                     },
                 },
                 &h,
@@ -469,10 +475,10 @@ impl PyAscedMinSumDecoder {
                     splitter_weight,
                     num_batches,
                     delta,
-                },
-                StandardBpSettings {
-                    max_iter,
-                    engine_settings: MinSumSettings { alpha },
+                    inner_settings: StandardBpSettings {
+                        max_iter,
+                        engine_settings: MinSumSettings { alpha },
+                    },
                 },
                 &h,
                 &channel_llrs,
@@ -565,11 +571,11 @@ impl PyAscedSpaDecoder {
                     splitter_weight,
                     num_batches,
                     delta,
-                },
-                StandardBpSettings {
-                    max_iter,
-                    engine_settings: SpaSettings {
-                        ..Default::default()
+                    inner_settings: StandardBpSettings {
+                        max_iter,
+                        engine_settings: SpaSettings {
+                            ..Default::default()
+                        },
                     },
                 },
                 &h,
@@ -665,18 +671,20 @@ impl PySlidingWindowAscedSpaDecoder {
 
         Ok(Self {
             decoder: SlidingWindowDecoder::new(
-                SlidingWindowSettings { warm_start, W, F },
-                WindowAscedSettingsWrapper {
-                    inner_settings: StandardBpSettings {
-                        max_iter,
-                        engine_settings: SpaSettings {
-                            ..Default::default()
-                        },
-                    },
-                    asced_settings: AscedSettings {
+                SlidingWindowSettings {
+                    warm_start,
+                    W,
+                    F,
+                    inner_settings: AscedSettings {
                         splitter_weight,
                         num_batches,
                         delta,
+                        inner_settings: StandardBpSettings {
+                            max_iter,
+                            engine_settings: SpaSettings {
+                                ..Default::default()
+                            },
+                        },
                     },
                 },
                 &h,
@@ -776,16 +784,18 @@ impl PySlidingWindowAscedMinSumDecoder {
 
         Ok(Self {
             decoder: SlidingWindowDecoder::new(
-                SlidingWindowSettings { warm_start, W, F },
-                WindowAscedSettingsWrapper {
-                    inner_settings: StandardBpSettings {
-                        max_iter,
-                        engine_settings: MinSumSettings { alpha },
-                    },
-                    asced_settings: AscedSettings {
+                SlidingWindowSettings {
+                    warm_start,
+                    W,
+                    F,
+                    inner_settings: AscedSettings {
                         splitter_weight,
                         num_batches,
                         delta,
+                        inner_settings: StandardBpSettings {
+                            max_iter,
+                            engine_settings: MinSumSettings { alpha },
+                        },
                     },
                 },
                 &h,

@@ -1,10 +1,6 @@
-use sprs::CsMat;
-
 use crate::decoders::{
     Decoder,
-    asced::InnerAscedDecoder,
-    engine::{AccessEngineInternals, BpComputeEngine, ParityCheckMatrix},
-    sliding_window::InnerWindowDecoder,
+    engine::{BpComputeEngine, ParityCheckMatrix},
 };
 
 #[derive(Clone)]
@@ -15,9 +11,9 @@ pub struct StandardBpSettings<InnerSettings: Clone> {
 
 #[derive(Clone)]
 pub struct StandardBpDecoder<Engine: BpComputeEngine> {
-    settings: StandardBpSettings<Engine::Settings>,
-    pcm: ParityCheckMatrix,
-    engine: Engine,
+    pub(in crate::decoders) settings: StandardBpSettings<Engine::Settings>,
+    pub(in crate::decoders) pcm: ParityCheckMatrix,
+    pub(in crate::decoders) engine: Engine,
 }
 
 impl<Engine> StandardBpDecoder<Engine>
@@ -69,75 +65,5 @@ where
         }
 
         x_hat
-    }
-}
-
-impl<Engine> InnerWindowDecoder for StandardBpDecoder<Engine>
-where
-    Engine: AccessEngineInternals,
-{
-    type Settings = StandardBpSettings<Engine::Settings>;
-
-    fn new(
-        settings: Self::Settings,
-        h: &CsMat<u8>,
-        channel_llrs: &[f64],
-    ) -> Self {
-        let pcm = ParityCheckMatrix::new(&h);
-        let mut engine = Engine::new(&pcm, &settings.engine_settings);
-        engine.set_channel_llrs(channel_llrs);
-
-        Self {
-            settings,
-            pcm,
-            engine,
-        }
-    }
-
-    fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
-        self.engine.get_cn_to_vn_msg(edge_id)
-    }
-
-    fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
-        self.engine.get_vn_to_cn_msg(edge_id)
-    }
-
-    fn get_channel_llr(&self, i: usize) -> f64 {
-        self.engine.get_channel_llr(i)
-    }
-
-    fn set_cn_to_vn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
-        self.engine.set_cn_to_vn_msg(edge_id, msg);
-    }
-
-    fn set_vn_to_cn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
-        self.engine.set_vn_to_cn_msg(edge_id, msg);
-    }
-
-    fn set_channel_llr(&mut self, i: usize, llr: f64) {
-        self.engine.set_channel_llr(i, llr);
-    }
-
-    fn reset(&mut self) {
-        self.engine.reset();
-    }
-}
-
-impl<Engine> InnerAscedDecoder for StandardBpDecoder<Engine>
-where
-    Engine: BpComputeEngine,
-{
-    type Settings = StandardBpSettings<Engine::Settings>;
-
-    fn new(
-        settings: Self::Settings,
-        pcm: &sprs::CsMat<u8>,
-        channel_llrs: &[f64],
-    ) -> Self {
-        Self::new(settings, &ParityCheckMatrix::new(pcm), channel_llrs)
-    }
-
-    fn reset(&mut self) {
-        self.engine.reset();
     }
 }

@@ -3,7 +3,10 @@ use std::collections::HashSet;
 use sprs::CsMat;
 
 use crate::decoders::{
-    Decoder, engine::ParityCheckMatrix, sliding_window::InnerWindowDecoder,
+    Decoder,
+    bp::{StandardBpDecoder, StandardBpSettings},
+    engine::{BpComputeEngine, ParityCheckMatrix},
+    sliding_window::InnerWindowDecoder,
 };
 use rand::{Rng, RngExt, SeedableRng};
 
@@ -100,12 +103,12 @@ fn append_splitters_to_pcm(
 /// Wraps an InnerAscedDecoder and handles extending the syndrome by g before
 /// decoding
 #[derive(Clone)]
-struct InnerDecoderWrapper<InnerDecoder>
+pub(in crate::decoders) struct InnerDecoderWrapper<InnerDecoder>
 where
     InnerDecoder: InnerAscedDecoder,
 {
-    decoder: InnerDecoder,
-    g: Vec<u8>,
+    pub(in crate::decoders) decoder: InnerDecoder,
+    pub(in crate::decoders) g: Vec<u8>,
 }
 
 impl<InnerDecoder> Decoder for InnerDecoderWrapper<InnerDecoder>
@@ -142,7 +145,8 @@ pub trait InnerAscedDecoder: Decoder {
 }
 
 #[derive(Clone)]
-pub struct AscedSettings {
+pub struct AscedSettings<InnerSettings: Clone> {
+    pub inner_settings: InnerSettings,
     /// Hamming weight of a splitter row
     pub splitter_weight: usize,
     /// Number of batches, i.e., sets of differing splitters
@@ -163,9 +167,10 @@ pub struct AscedDecoder<InnerDecoder>
 where
     InnerDecoder: InnerAscedDecoder,
 {
-    decoder_ensemble: Vec<InnerDecoderWrapper<InnerDecoder>>,
-    pcm: ParityCheckMatrix,
-    last_chosen: Option<usize>,
+    pub(in crate::decoders) decoder_ensemble:
+        Vec<InnerDecoderWrapper<InnerDecoder>>,
+    pub(in crate::decoders) pcm: ParityCheckMatrix,
+    pub(in crate::decoders) last_chosen: Option<usize>,
 }
 
 impl<InnerDecoder> AscedDecoder<InnerDecoder>
@@ -173,8 +178,7 @@ where
     InnerDecoder: InnerAscedDecoder,
 {
     pub fn new(
-        settings: AscedSettings,
-        inner_settings: InnerDecoder::Settings,
+        settings: AscedSettings<InnerDecoder::Settings>,
         h: &CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self {
@@ -245,7 +249,7 @@ where
 
                 decoder_ensemble.push(InnerDecoderWrapper {
                     decoder: InnerDecoder::new(
-                        inner_settings.clone(),
+                        settings.inner_settings.clone(),
                         &extended_pcm,
                         channel_llrs,
                     ),
@@ -286,91 +290,21 @@ where
     }
 }
 
-pub struct WindowAscedSettingsWrapper<InnerDecoder>
+impl<Engine> InnerAscedDecoder for StandardBpDecoder<Engine>
 where
-    InnerDecoder: InnerAscedDecoder,
+    Engine: BpComputeEngine,
 {
-    pub inner_settings: InnerDecoder::Settings,
-    pub asced_settings: AscedSettings,
-}
-
-impl<InnerDecoder> Clone for WindowAscedSettingsWrapper<InnerDecoder>
-where
-    InnerDecoder: InnerAscedDecoder,
-{
-    fn clone(&self) -> Self {
-        Self {
-            inner_settings: self.inner_settings.clone(),
-            asced_settings: self.asced_settings.clone(),
-        }
-    }
-}
-
-impl<InnerDecoder> InnerWindowDecoder for AscedDecoder<InnerDecoder>
-where
-    InnerDecoder: InnerAscedDecoder + InnerWindowDecoder,
-{
-    type Settings = WindowAscedSettingsWrapper<InnerDecoder>;
+    type Settings = StandardBpSettings<Engine::Settings>;
 
     fn new(
         settings: Self::Settings,
-        h: &CsMat<u8>,
+        pcm: &sprs::CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self {
-        Self::new(
-            settings.asced_settings,
-            settings.inner_settings,
-            &h,
-            channel_llrs,
-        )
-    }
-
-    fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
-        self.decoder_ensemble[self
-            .last_chosen
-            .expect("AscedDecoder: get_cn_to_vn_msg called before decode")]
-        .decoder
-        .get_cn_to_vn_msg(edge_id)
-    }
-
-    fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
-        self.decoder_ensemble[self
-            .last_chosen
-            .expect("AscedDecoder: get_vn_to_cn_msg called before decode")]
-        .decoder
-        .get_vn_to_cn_msg(edge_id)
-    }
-
-    fn get_channel_llr(&self, i: usize) -> f64 {
-        self.decoder_ensemble[self
-            .last_chosen
-            .expect("AscedDecoder: get_channel_llr called before decode")]
-        .decoder
-        .get_channel_llr(i)
-    }
-
-    fn set_cn_to_vn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
-        for wrapper in &mut self.decoder_ensemble {
-            wrapper.decoder.set_cn_to_vn_msg(edge_id, msg);
-        }
-    }
-
-    fn set_vn_to_cn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
-        for wrapper in &mut self.decoder_ensemble {
-            wrapper.decoder.set_vn_to_cn_msg(edge_id, msg);
-        }
-    }
-
-    fn set_channel_llr(&mut self, i: usize, llr: f64) {
-        for wrapper in &mut self.decoder_ensemble {
-            wrapper.decoder.set_channel_llr(i, llr);
-        }
+        Self::new(settings, &ParityCheckMatrix::new(pcm), channel_llrs)
     }
 
     fn reset(&mut self) {
-        for decoder in &mut self.decoder_ensemble {
-            decoder.reset();
-        }
-        self.last_chosen = None;
+        self.reset();
     }
 }

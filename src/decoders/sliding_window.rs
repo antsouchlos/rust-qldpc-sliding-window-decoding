@@ -1,8 +1,7 @@
 use sprs::{CsMat, DenseVector};
 
 use crate::decoders::{
-    Decoder,
-    engine::{EdgeId, ParityCheckMatrix},
+    Decoder, asced::{AscedDecoder, AscedSettings, InnerAscedDecoder}, bp::{StandardBpDecoder, StandardBpSettings}, engine::{AccessEngineInternals, EdgeId, ParityCheckMatrix}
 };
 
 use crate::windowing::{
@@ -12,7 +11,8 @@ use crate::windowing::{
 
 #[derive(Clone)]
 #[allow(non_snake_case)]
-pub struct SlidingWindowSettings {
+pub struct SlidingWindowSettings<InnerSettings: Clone> {
+    pub inner_settings: InnerSettings,
     pub warm_start: bool,
     pub F: usize,
     pub W: usize,
@@ -44,7 +44,7 @@ pub struct SlidingWindowDecoder<InnerDecoder>
 where
     InnerDecoder: InnerWindowDecoder,
 {
-    settings: SlidingWindowSettings,
+    settings: SlidingWindowSettings<InnerDecoder::Settings>,
     window_decoders: Vec<InnerDecoder>,
     window_borders: Vec<((usize, usize), (usize, usize))>,
     overlap_info: OverlapInfo,
@@ -56,6 +56,54 @@ impl<InnerDecoder> SlidingWindowDecoder<InnerDecoder>
 where
     InnerDecoder: InnerWindowDecoder,
 {
+    #[allow(non_snake_case)]
+    pub fn new(
+        settings: SlidingWindowSettings<InnerDecoder::Settings>,
+        H: &CsMat<u8>,
+        m: usize,
+        num_rounds: usize,
+        channel_llrs: &[f64],
+    ) -> Self {
+        let window_borders =
+            get_window_borders(&H, m, num_rounds, settings.W, settings.F);
+
+        let win_hs = split_pcm(&H, &window_borders);
+        let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
+        let overlap_info = get_overlap_info(&window_borders);
+
+        let window_decoders = win_hs
+            .iter()
+            .zip(win_llrs)
+            .map(|(pcm, channel_llrs)| {
+                InnerDecoder::new(
+                    settings.inner_settings.clone(),
+                    &pcm,
+                    &channel_llrs,
+                )
+            })
+            .collect();
+
+        let win_pcms: Vec<ParityCheckMatrix> = win_hs
+            .iter()
+            .map(|win_h| ParityCheckMatrix::new(&win_h))
+            .collect();
+
+        Self {
+            settings,
+            window_decoders,
+            window_borders,
+            overlap_info,
+            win_pcms: win_pcms,
+            total_n: H.cols(),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        for decoder in self.window_decoders.iter_mut() {
+            decoder.reset();
+        }
+    }
+
     // Comitting certain columns of the error estimate may change the parity
     // of some syndrome bits for the next window. This function computes
     // that change in parity.
@@ -158,56 +206,6 @@ where
             let llr = self.window_decoders[win_idx - 1]
                 .get_channel_llr(prev_win_overlap_start.1 + i);
             self.window_decoders[win_idx].set_channel_llr(i, llr);
-        }
-    }
-}
-
-#[allow(non_snake_case)]
-impl<InnerDecoder> SlidingWindowDecoder<InnerDecoder>
-where
-    InnerDecoder: InnerWindowDecoder,
-{
-    pub fn new(
-        settings: SlidingWindowSettings,
-        inner_settings: InnerDecoder::Settings,
-        H: &CsMat<u8>,
-        m: usize,
-        num_rounds: usize,
-        channel_llrs: &[f64],
-    ) -> Self {
-        let window_borders =
-            get_window_borders(&H, m, num_rounds, settings.W, settings.F);
-
-        let win_hs = split_pcm(&H, &window_borders);
-        let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
-        let overlap_info = get_overlap_info(&window_borders);
-
-        let window_decoders = win_hs
-            .iter()
-            .zip(win_llrs)
-            .map(|(pcm, channel_llrs)| {
-                InnerDecoder::new(inner_settings.clone(), &pcm, &channel_llrs)
-            })
-            .collect();
-
-        let win_pcms: Vec<ParityCheckMatrix> = win_hs
-            .iter()
-            .map(|win_h| ParityCheckMatrix::new(&win_h))
-            .collect();
-
-        Self {
-            settings,
-            window_decoders,
-            window_borders,
-            overlap_info,
-            win_pcms: win_pcms,
-            total_n: H.cols(),
-        }
-    }
-
-    pub fn reset(&mut self) {
-        for decoder in self.window_decoders.iter_mut() {
-            decoder.reset();
         }
     }
 }
@@ -373,10 +371,10 @@ mod tests {
                 warm_start: false,
                 F: 2,
                 W: 3,
-            },
-            StandardBpSettings {
-                max_iter: 32,
-                engine_settings: MinSumSettings { alpha: 1.0 },
+                inner_settings: StandardBpSettings {
+                    max_iter: 32,
+                    engine_settings: MinSumSettings { alpha: 1.0 },
+                },
             },
             &h,
             2,
@@ -454,10 +452,10 @@ mod tests {
                 warm_start: false,
                 F: 2,
                 W: 3,
-            },
-            StandardBpSettings {
-                max_iter: 32,
-                engine_settings: MinSumSettings { alpha: 1.0 },
+                inner_settings: StandardBpSettings {
+                    max_iter: 32,
+                    engine_settings: MinSumSettings { alpha: 1.0 },
+                },
             },
             &h,
             2,
@@ -632,5 +630,123 @@ mod tests {
             .collect();
 
         assert_eq!(expected, got);
+    }
+}
+
+impl<Engine> InnerWindowDecoder for StandardBpDecoder<Engine>
+where
+    Engine: AccessEngineInternals,
+{
+    type Settings = StandardBpSettings<Engine::Settings>;
+
+    fn new(
+        settings: Self::Settings,
+        h: &CsMat<u8>,
+        channel_llrs: &[f64],
+    ) -> Self {
+        let pcm = ParityCheckMatrix::new(&h);
+        let mut engine = Engine::new(&pcm, &settings.engine_settings);
+        engine.set_channel_llrs(channel_llrs);
+
+        Self {
+            settings,
+            pcm,
+            engine,
+        }
+    }
+
+    fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
+        self.engine.get_cn_to_vn_msg(edge_id)
+    }
+
+    fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
+        self.engine.get_vn_to_cn_msg(edge_id)
+    }
+
+    fn get_channel_llr(&self, i: usize) -> f64 {
+        self.engine.get_channel_llr(i)
+    }
+
+    fn set_cn_to_vn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
+        self.engine.set_cn_to_vn_msg(edge_id, msg);
+    }
+
+    fn set_vn_to_cn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
+        self.engine.set_vn_to_cn_msg(edge_id, msg);
+    }
+
+    fn set_channel_llr(&mut self, i: usize, llr: f64) {
+        self.engine.set_channel_llr(i, llr);
+    }
+
+    fn reset(&mut self) {
+        self.engine.reset();
+    }
+}
+
+impl<InnerDecoder> InnerWindowDecoder for AscedDecoder<InnerDecoder>
+where
+    InnerDecoder: InnerAscedDecoder + InnerWindowDecoder,
+{
+    // InnerAscedDecoder::Settings and InnerWindowDecoder::Settings are almost
+    // surely the same here
+    type Settings =
+        AscedSettings<<InnerDecoder as InnerAscedDecoder>::Settings>;
+
+    fn new(
+        settings: Self::Settings,
+        h: &CsMat<u8>,
+        channel_llrs: &[f64],
+    ) -> Self {
+        Self::new(settings, &h, channel_llrs)
+    }
+
+    fn get_cn_to_vn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
+        self.decoder_ensemble[self
+            .last_chosen
+            .expect("AscedDecoder: get_cn_to_vn_msg called before decode")]
+        .decoder
+        .get_cn_to_vn_msg(edge_id)
+    }
+
+    fn get_vn_to_cn_msg(&self, edge_id: super::engine::EdgeId) -> f64 {
+        self.decoder_ensemble[self
+            .last_chosen
+            .expect("AscedDecoder: get_vn_to_cn_msg called before decode")]
+        .decoder
+        .get_vn_to_cn_msg(edge_id)
+    }
+
+    fn get_channel_llr(&self, i: usize) -> f64 {
+        self.decoder_ensemble[self
+            .last_chosen
+            .expect("AscedDecoder: get_channel_llr called before decode")]
+        .decoder
+        .get_channel_llr(i)
+    }
+
+    fn set_cn_to_vn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
+        for wrapper in &mut self.decoder_ensemble {
+            wrapper.decoder.set_cn_to_vn_msg(edge_id, msg);
+        }
+    }
+
+    fn set_vn_to_cn_msg(&mut self, edge_id: super::engine::EdgeId, msg: f64) {
+        for wrapper in &mut self.decoder_ensemble {
+            wrapper.decoder.set_vn_to_cn_msg(edge_id, msg);
+        }
+    }
+
+    fn set_channel_llr(&mut self, i: usize, llr: f64) {
+        for wrapper in &mut self.decoder_ensemble {
+            wrapper.decoder.set_channel_llr(i, llr);
+        }
+    }
+
+    fn reset(&mut self) {
+        for decoder in &mut self.decoder_ensemble {
+            decoder.reset();
+        }
+        self.last_chosen = None;
     }
 }
