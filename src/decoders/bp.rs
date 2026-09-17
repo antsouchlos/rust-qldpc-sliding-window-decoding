@@ -8,13 +8,14 @@ use crate::decoders::{
 };
 
 #[derive(Clone)]
-pub struct StandardBpSettings {
+pub struct StandardBpSettings<InnerSettings: Clone> {
     pub max_iter: usize,
+    pub engine_settings: InnerSettings,
 }
 
 #[derive(Clone)]
 pub struct StandardBpDecoder<Engine: BpComputeEngine> {
-    settings: StandardBpSettings,
+    settings: StandardBpSettings<Engine::Settings>,
     pcm: ParityCheckMatrix,
     engine: Engine,
 }
@@ -30,11 +31,11 @@ where
     }
 
     pub fn new(
-        settings: StandardBpSettings,
+        settings: StandardBpSettings<Engine::Settings>,
         pcm: &ParityCheckMatrix,
         channel_llrs: &[f64],
     ) -> Self {
-        let mut engine = Engine::new(pcm);
+        let mut engine = Engine::new(pcm, &settings.engine_settings);
         engine.set_channel_llrs(channel_llrs);
 
         Self {
@@ -75,15 +76,15 @@ impl<Engine> InnerWindowDecoder for StandardBpDecoder<Engine>
 where
     Engine: AccessEngineInternals,
 {
-    type Settings = StandardBpSettings;
+    type Settings = StandardBpSettings<Engine::Settings>;
 
     fn new(
-        settings: StandardBpSettings,
+        settings: Self::Settings,
         h: &CsMat<u8>,
         channel_llrs: &[f64],
     ) -> Self {
         let pcm = ParityCheckMatrix::new(&h);
-        let mut engine = Engine::new(&pcm);
+        let mut engine = Engine::new(&pcm, &settings.engine_settings);
         engine.set_channel_llrs(channel_llrs);
 
         Self {
@@ -126,7 +127,7 @@ impl<Engine> InnerAscedDecoder for StandardBpDecoder<Engine>
 where
     Engine: BpComputeEngine,
 {
-    type Settings = StandardBpSettings;
+    type Settings = StandardBpSettings<Engine::Settings>;
 
     fn new(
         settings: Self::Settings,

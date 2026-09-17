@@ -94,7 +94,9 @@ impl ParityCheckMatrix {
 
 /// (Only) responsible for actual computation
 pub trait BpComputeEngine {
-    fn new(pcm: &ParityCheckMatrix) -> Self;
+    type Settings: Clone;
+
+    fn new(pcm: &ParityCheckMatrix, settings: &Self::Settings) -> Self;
     fn set_channel_llrs(&mut self, llrs: &[f64]);
     fn reset(&mut self);
 

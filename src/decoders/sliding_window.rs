@@ -252,7 +252,7 @@ where
 mod tests {
     use crate::decoders::{
         bp::{StandardBpDecoder, StandardBpSettings},
-        engine::min_sum::MinSumComputeEngine,
+        engine::min_sum::{MinSumComputeEngine, MinSumSettings},
     };
 
     use super::*;
@@ -302,7 +302,10 @@ mod tests {
         let pcm = ParityCheckMatrix::new(&h);
 
         let mut decoder = StandardBpDecoder::<MinSumComputeEngine>::new(
-            StandardBpSettings { max_iter: 32 },
+            StandardBpSettings {
+                max_iter: 32,
+                engine_settings: MinSumSettings { alpha: 1.0 },
+            },
             &pcm,
             &channel_llrs,
         );
@@ -371,7 +374,10 @@ mod tests {
                 F: 2,
                 W: 3,
             },
-            StandardBpSettings { max_iter: 32 },
+            StandardBpSettings {
+                max_iter: 32,
+                engine_settings: MinSumSettings { alpha: 1.0 },
+            },
             &h,
             2,
             4 - 2,
@@ -449,7 +455,10 @@ mod tests {
                 F: 2,
                 W: 3,
             },
-            StandardBpSettings { max_iter: 32 },
+            StandardBpSettings {
+                max_iter: 32,
+                engine_settings: MinSumSettings { alpha: 1.0 },
+            },
             &h,
             2,
             4 - 2,
@@ -524,7 +533,10 @@ mod tests {
         let pcm = ParityCheckMatrix::new(&h);
 
         let mut decoder1 = StandardBpDecoder::<MinSumComputeEngine>::new(
-            StandardBpSettings { max_iter: 32 },
+            StandardBpSettings {
+                max_iter: 32,
+                engine_settings: MinSumSettings { alpha: 1.0 },
+            },
             &pcm,
             &channel_llrs,
         );
@@ -535,7 +547,10 @@ mod tests {
         }
 
         let mut decoder2 = StandardBpDecoder::<MinSumComputeEngine>::new(
-            StandardBpSettings { max_iter: 32 },
+            StandardBpSettings {
+                max_iter: 32,
+                engine_settings: MinSumSettings { alpha: 1.0 },
+            },
             &pcm,
             &channel_llrs,
         );

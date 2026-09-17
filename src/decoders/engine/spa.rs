@@ -39,6 +39,10 @@ impl PhiTable {
     pub fn lookup(&self, x: f64) -> f64 {
         assert!(x >= 0.0);
 
+        if x < 1.0 / self.dx_inv {
+            return (2.0 / x).ln().min(self.x_max);
+        }
+
         if x >= self.x_max {
             return 0.0;
         }
@@ -74,16 +78,33 @@ struct State {
 
 #[derive(Clone)]
 #[allow(non_snake_case)]
+pub struct SpaSettings {
+    pub lookup_table_size: usize,
+    /// VN->CN messages are clipped to [-K,+K]
+    pub K: f64,
+}
+
+impl Default for SpaSettings {
+    fn default() -> Self {
+        Self {
+            lookup_table_size: 2usize.pow(16),
+            K: 25.0,
+        }
+    }
+}
+
+#[derive(Clone)]
+#[allow(non_snake_case)]
 pub struct SpaComputeEngine {
     state: State,
     /// Lookup table used instead of computing tanh and arctanh directly
     phi_table: PhiTable,
-    /// VN->CN messages are clipped to [-K,+K]
     K: f64,
 }
 
 impl BpComputeEngine for SpaComputeEngine {
-    fn new(pcm: &ParityCheckMatrix) -> Self {
+    type Settings = SpaSettings;
+    fn new(pcm: &ParityCheckMatrix, settings: &SpaSettings) -> Self {
         let h_csr = pcm.h.to_csr();
         let num_cns = h_csr.rows();
         let num_vns = h_csr.cols();
@@ -123,8 +144,8 @@ impl BpComputeEngine for SpaComputeEngine {
                 num_vns,
                 num_cns,
             },
-            phi_table: PhiTable::new(2usize.pow(16), 25.0),
-            K: 25.0,
+            phi_table: PhiTable::new(settings.lookup_table_size, settings.K),
+            K: settings.K,
         }
     }
 
@@ -342,7 +363,7 @@ mod tests {
         let h = get_hamming_h();
         let pcm = ParityCheckMatrix::new(&h.clone());
 
-        let mut engine = SpaComputeEngine::new(&pcm);
+        let mut engine = SpaComputeEngine::new(&pcm, &SpaSettings::default());
         for edge in &mut engine.state.edges {
             edge.msg_cn_to_vn = 1.0;
         }
@@ -370,7 +391,7 @@ mod tests {
         let h = get_hamming_h();
         let pcm = ParityCheckMatrix::new(&h.clone());
 
-        let mut engine = SpaComputeEngine::new(&pcm);
+        let mut engine = SpaComputeEngine::new(&pcm, &SpaSettings::default());
         for edge in &mut engine.state.edges {
             edge.msg_vn_to_cn = 1.0;
         }
@@ -406,7 +427,7 @@ mod tests {
         let pcm = ParityCheckMatrix::new(&h.clone());
 
         let channel_llrs = vec![1.0; h.cols()];
-        let mut engine = SpaComputeEngine::new(&pcm);
+        let mut engine = SpaComputeEngine::new(&pcm, &SpaSettings::default());
         engine.set_channel_llrs(&channel_llrs);
         for edge in &mut engine.state.edges {
             edge.msg_cn_to_vn = 1.0;
@@ -431,7 +452,7 @@ mod tests {
         let h = get_hamming_h();
 
         let pcm = ParityCheckMatrix { h };
-        let mut engine = SpaComputeEngine::new(&pcm);
+        let mut engine = SpaComputeEngine::new(&pcm, &SpaSettings::default());
         for (num, edge) in (engine.state.edges).iter_mut().enumerate() {
             edge.msg_vn_to_cn = (num + 1) as f64;
             edge.msg_cn_to_vn = (num + 1) as f64 * 10.0;

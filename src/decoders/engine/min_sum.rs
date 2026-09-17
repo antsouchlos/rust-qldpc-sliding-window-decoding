@@ -13,7 +13,13 @@ pub struct Edge {
 }
 
 #[derive(Clone)]
-pub struct MinSumComputeEngine {
+pub struct MinSumSettings {
+    /// Normalization factor for the CN update
+    pub alpha: f64,
+}
+
+#[derive(Clone)]
+struct State {
     pub edges: Vec<Edge>,
     pub cn_ranges: Vec<Range<usize>>,
     pub vn_indices: Vec<Vec<usize>>,
@@ -23,8 +29,16 @@ pub struct MinSumComputeEngine {
     pub num_cns: usize,
 }
 
+#[derive(Clone)]
+pub struct MinSumComputeEngine {
+    state: State,
+    alpha: f64,
+}
+
 impl BpComputeEngine for MinSumComputeEngine {
-    fn new(pcm: &ParityCheckMatrix) -> Self {
+    type Settings = MinSumSettings;
+
+    fn new(pcm: &ParityCheckMatrix, settings: &Self::Settings) -> Self {
         let h_csr = pcm.h.to_csr();
         let num_cns = h_csr.rows();
         let num_vns = h_csr.cols();
@@ -55,22 +69,25 @@ impl BpComputeEngine for MinSumComputeEngine {
         }
 
         Self {
-            edges,
-            cn_ranges,
-            vn_indices,
-            channel_llrs: vec![0.0; num_vns],
-            total_llrs: vec![0.0; num_vns],
-            num_vns,
-            num_cns,
+            state: State {
+                edges,
+                cn_ranges,
+                vn_indices,
+                channel_llrs: vec![0.0; num_vns],
+                total_llrs: vec![0.0; num_vns],
+                num_vns,
+                num_cns,
+            },
+            alpha: settings.alpha,
         }
     }
 
     fn set_channel_llrs(&mut self, llrs: &[f64]) {
-        self.channel_llrs.copy_from_slice(llrs);
+        self.state.channel_llrs.copy_from_slice(llrs);
     }
 
     fn reset(&mut self) {
-        for edge in self.edges.iter_mut() {
+        for edge in self.state.edges.iter_mut() {
             edge.msg_vn_to_cn = 0.0;
             edge.msg_cn_to_vn = 0.0;
         }
@@ -81,8 +98,8 @@ impl BpComputeEngine for MinSumComputeEngine {
     /// To avoid having to do two passes to account for the extrinsic
     /// principle, the two minimum values are found in one pass.
     fn cn_update(&mut self, syndrome: &[u8]) {
-        for j in 0..self.num_cns {
-            let range = self.cn_ranges[j].clone();
+        for j in 0..self.state.num_cns {
+            let range = self.state.cn_ranges[j].clone();
             let syndrome_sign = 1.0 - 2.0 * syndrome[j] as f64;
             let mut total_sign = syndrome_sign;
             let mut min1 = f64::INFINITY;
@@ -92,7 +109,7 @@ impl BpComputeEngine for MinSumComputeEngine {
             // Combine all incoming messages
 
             for edge_idx in range.clone() {
-                let msg = self.edges[edge_idx].msg_vn_to_cn;
+                let msg = self.state.edges[edge_idx].msg_vn_to_cn;
                 let abs_msg = msg.abs();
 
                 total_sign *= msg.signum();
@@ -109,14 +126,14 @@ impl BpComputeEngine for MinSumComputeEngine {
             // Assign outgoing messages
 
             for edge_idx in range {
-                let msg = self.edges[edge_idx].msg_vn_to_cn;
+                let msg = self.state.edges[edge_idx].msg_vn_to_cn;
 
                 let extrinsic_sign = total_sign * msg.signum();
                 let extrinsic_mag =
                     if edge_idx == min1_idx { min2 } else { min1 };
 
-                self.edges[edge_idx].msg_cn_to_vn =
-                    extrinsic_sign * extrinsic_mag;
+                self.state.edges[edge_idx].msg_cn_to_vn =
+                    self.alpha * extrinsic_sign * extrinsic_mag;
             }
         }
     }
@@ -128,29 +145,30 @@ impl BpComputeEngine for MinSumComputeEngine {
     /// [1] H. Yao et al., "Belief Propagation Decoding of Quantum LDPC Codes
     ///     with Guided Decimation," arXiv:2312.10950, 2024.
     fn vn_update(&mut self) {
-        for i in 0..self.num_vns {
-            let num_neighbors = self.vn_indices[i].len();
+        for i in 0..self.state.num_vns {
+            let num_neighbors = self.state.vn_indices[i].len();
 
             // Combine all incoming messages
 
-            self.total_llrs[i] = self.channel_llrs[i];
+            self.state.total_llrs[i] = self.state.channel_llrs[i];
             for j_idx in 0..num_neighbors {
-                let idx = self.vn_indices[i][j_idx];
-                self.total_llrs[i] += self.edges[idx].msg_cn_to_vn;
+                let idx = self.state.vn_indices[i][j_idx];
+                self.state.total_llrs[i] += self.state.edges[idx].msg_cn_to_vn;
             }
 
             // Assign outgoing messages
 
             for j_idx in 0..num_neighbors {
-                let edge_idx = self.vn_indices[i][j_idx];
-                self.edges[edge_idx].msg_vn_to_cn =
-                    self.total_llrs[i] - self.edges[edge_idx].msg_cn_to_vn;
+                let edge_idx = self.state.vn_indices[i][j_idx];
+                self.state.edges[edge_idx].msg_vn_to_cn = self.state.total_llrs
+                    [i]
+                    - self.state.edges[edge_idx].msg_cn_to_vn;
             }
         }
     }
 
     fn total_llrs(&self) -> &[f64] {
-        &self.total_llrs
+        &self.state.total_llrs
     }
 }
 
@@ -159,9 +177,9 @@ impl MinSumComputeEngine {
         let i = (edge_id.0 & 0xFFFF) as usize;
         let j = (edge_id.0 >> 16) as usize;
 
-        self.vn_indices[i]
+        self.state.vn_indices[i]
             .iter()
-            .find(|&&k| self.edges[k].row == j)
+            .find(|&&k| self.state.edges[k].row == j)
             .expect("Invalid edge id")
             .clone()
     }
@@ -172,18 +190,18 @@ impl AccessEngineInternals for MinSumComputeEngine {
         &self,
         edge_id: crate::decoders::engine::EdgeId,
     ) -> f64 {
-        self.edges[self.edge_id_to_edge_idx(edge_id)].msg_cn_to_vn
+        self.state.edges[self.edge_id_to_edge_idx(edge_id)].msg_cn_to_vn
     }
 
     fn get_vn_to_cn_msg(
         &self,
         edge_id: crate::decoders::engine::EdgeId,
     ) -> f64 {
-        self.edges[self.edge_id_to_edge_idx(edge_id)].msg_vn_to_cn
+        self.state.edges[self.edge_id_to_edge_idx(edge_id)].msg_vn_to_cn
     }
 
     fn get_channel_llr(&self, i: usize) -> f64 {
-        self.channel_llrs[i]
+        self.state.channel_llrs[i]
     }
 
     fn set_cn_to_vn_msg(
@@ -192,7 +210,7 @@ impl AccessEngineInternals for MinSumComputeEngine {
         msg: f64,
     ) {
         let edge_idx = self.edge_id_to_edge_idx(edge_id);
-        self.edges[edge_idx].msg_cn_to_vn = msg;
+        self.state.edges[edge_idx].msg_cn_to_vn = msg;
     }
 
     fn set_vn_to_cn_msg(
@@ -201,11 +219,11 @@ impl AccessEngineInternals for MinSumComputeEngine {
         msg: f64,
     ) {
         let edge_idx = self.edge_id_to_edge_idx(edge_id);
-        self.edges[edge_idx].msg_vn_to_cn = msg;
+        self.state.edges[edge_idx].msg_vn_to_cn = msg;
     }
 
     fn set_channel_llr(&mut self, i: usize, llr: f64) {
-        self.channel_llrs[i] = llr;
+        self.state.channel_llrs[i] = llr;
     }
 }
 
@@ -238,8 +256,11 @@ mod tests {
     fn test_vn_update() {
         let h = get_hamming_h();
 
-        let mut engine = MinSumComputeEngine::new(&ParityCheckMatrix { h });
-        for edge in &mut engine.edges {
+        let mut engine = MinSumComputeEngine::new(
+            &ParityCheckMatrix { h },
+            &MinSumSettings { alpha: 1.0 },
+        );
+        for edge in &mut engine.state.edges {
             edge.msg_cn_to_vn = 1.0;
         }
 
@@ -256,7 +277,7 @@ mod tests {
         let expected =
             vec![0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0, 0.0, 1.0, 1.0, 2.0];
         let got: Vec<f64> =
-            engine.edges.iter().map(|e| e.msg_vn_to_cn).collect();
+            engine.state.edges.iter().map(|e| e.msg_vn_to_cn).collect();
         assert_eq!(expected, got);
     }
 
@@ -264,8 +285,11 @@ mod tests {
     fn test_cn_update() {
         let h = get_hamming_h();
 
-        let mut engine = MinSumComputeEngine::new(&ParityCheckMatrix { h });
-        for (num, edge) in (engine.edges).iter_mut().enumerate() {
+        let mut engine = MinSumComputeEngine::new(
+            &ParityCheckMatrix { h },
+            &MinSumSettings { alpha: 1.0 },
+        );
+        for (num, edge) in (engine.state.edges).iter_mut().enumerate() {
             edge.msg_vn_to_cn = (num + 1) as f64;
         }
 
@@ -285,7 +309,7 @@ mod tests {
             2.0, 1.0, 1.0, 1.0, -6.0, -5.0, -5.0, -5.0, 10.0, 9.0, 9.0, 9.0,
         ];
         let got: Vec<f64> =
-            engine.edges.iter().map(|e| e.msg_cn_to_vn).collect();
+            engine.state.edges.iter().map(|e| e.msg_cn_to_vn).collect();
         assert_eq!(expected, got);
     }
 
@@ -294,9 +318,12 @@ mod tests {
         let h = get_hamming_h();
 
         let channel_llrs = vec![1.0; h.cols()];
-        let mut engine = MinSumComputeEngine::new(&ParityCheckMatrix { h });
+        let mut engine = MinSumComputeEngine::new(
+            &ParityCheckMatrix { h },
+            &MinSumSettings { alpha: 1.0 },
+        );
         engine.set_channel_llrs(&channel_llrs);
-        for edge in &mut engine.edges {
+        for edge in &mut engine.state.edges {
             edge.msg_cn_to_vn = 1.0;
         }
 
@@ -311,7 +338,7 @@ mod tests {
         //            0 0 1 1 0 1 1
 
         let expected = vec![2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 4.0];
-        assert_eq!(expected, engine.total_llrs);
+        assert_eq!(expected, engine.state.total_llrs);
     }
 
     #[test]
@@ -319,12 +346,13 @@ mod tests {
         let h = get_hamming_h();
 
         let pcm = ParityCheckMatrix { h };
-        let mut engine = MinSumComputeEngine::new(&pcm);
-        for (num, edge) in (engine.edges).iter_mut().enumerate() {
+        let mut engine =
+            MinSumComputeEngine::new(&pcm, &MinSumSettings { alpha: 1.0 });
+        for (num, edge) in (engine.state.edges).iter_mut().enumerate() {
             edge.msg_vn_to_cn = (num + 1) as f64;
             edge.msg_cn_to_vn = (num + 1) as f64 * 10.0;
         }
-        for i in 0..engine.num_vns {
+        for i in 0..engine.state.num_vns {
             engine.set_channel_llr(i, (i + 1) as f64 * 100.0);
         }
 
@@ -357,7 +385,7 @@ mod tests {
             );
         }
 
-        for i in 0..engine.num_vns {
+        for i in 0..engine.state.num_vns {
             assert_eq!(engine.get_channel_llr(i), (i + 1) as f64 * 100.0);
         }
     }

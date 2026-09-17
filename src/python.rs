@@ -11,8 +11,8 @@ use crate::decoders::asced::{
 };
 use crate::decoders::bp::{StandardBpDecoder, StandardBpSettings};
 use crate::decoders::engine::ParityCheckMatrix;
-use crate::decoders::engine::min_sum::MinSumComputeEngine;
-use crate::decoders::engine::spa::SpaComputeEngine;
+use crate::decoders::engine::min_sum::{MinSumComputeEngine, MinSumSettings};
+use crate::decoders::engine::spa::{SpaComputeEngine, SpaSettings};
 use crate::decoders::sliding_window::{
     InnerWindowDecoder, SlidingWindowDecoder, SlidingWindowSettings,
 };
@@ -70,6 +70,7 @@ impl PyStandardMinSumDecoder {
         H: &Bound<'_, PyAny>,
         priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
+        alpha: f64,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
@@ -87,7 +88,10 @@ impl PyStandardMinSumDecoder {
 
         Ok(Self {
             decoder: StandardBpDecoder::new(
-                StandardBpSettings { max_iter },
+                StandardBpSettings {
+                    max_iter,
+                    engine_settings: MinSumSettings { alpha },
+                },
                 &ParityCheckMatrix::new(&h),
                 &channel_llrs,
             ),
@@ -172,7 +176,12 @@ impl PyStandardSpaDecoder {
 
         Ok(Self {
             decoder: StandardBpDecoder::new(
-                StandardBpSettings { max_iter },
+                StandardBpSettings {
+                    max_iter,
+                    engine_settings: SpaSettings {
+                        ..Default::default()
+                    },
+                },
                 &ParityCheckMatrix::new(&h),
                 &channel_llrs,
             ),
@@ -239,6 +248,7 @@ impl PySlidingWindowMinSumDecoder {
         priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
         warm_start: bool,
+        alpha: f64,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
@@ -263,7 +273,10 @@ impl PySlidingWindowMinSumDecoder {
         Ok(Self {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings { warm_start, W, F },
-                StandardBpSettings { max_iter },
+                StandardBpSettings {
+                    max_iter,
+                    engine_settings: MinSumSettings { alpha },
+                },
                 &h,
                 m,
                 num_rounds,
@@ -356,7 +369,12 @@ impl PySlidingWindowSpaDecoder {
         Ok(Self {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings { warm_start, W, F },
-                StandardBpSettings { max_iter },
+                StandardBpSettings {
+                    max_iter,
+                    engine_settings: SpaSettings {
+                        ..Default::default()
+                    },
+                },
                 &h,
                 m,
                 num_rounds,
@@ -423,6 +441,7 @@ impl PyAscedMinSumDecoder {
         delta: usize,
         priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
+        alpha: f64,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
@@ -451,7 +470,10 @@ impl PyAscedMinSumDecoder {
                     num_batches,
                     delta,
                 },
-                StandardBpSettings { max_iter },
+                StandardBpSettings {
+                    max_iter,
+                    engine_settings: MinSumSettings { alpha },
+                },
                 &h,
                 &channel_llrs,
             ),
@@ -544,7 +566,12 @@ impl PyAscedSpaDecoder {
                     num_batches,
                     delta,
                 },
-                StandardBpSettings { max_iter },
+                StandardBpSettings {
+                    max_iter,
+                    engine_settings: SpaSettings {
+                        ..Default::default()
+                    },
+                },
                 &h,
                 &channel_llrs,
             ),
@@ -640,7 +667,12 @@ impl PySlidingWindowAscedSpaDecoder {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings { warm_start, W, F },
                 WindowAscedSettingsWrapper {
-                    inner_settings: StandardBpSettings { max_iter },
+                    inner_settings: StandardBpSettings {
+                        max_iter,
+                        engine_settings: SpaSettings {
+                            ..Default::default()
+                        },
+                    },
                     asced_settings: AscedSettings {
                         splitter_weight,
                         num_batches,
@@ -694,8 +726,9 @@ impl PySlidingWindowAscedSpaDecoder {
 #[gen_stub_pyclass]
 #[pyclass(name = "SlidingWindowAscedMinSumDecoder")]
 pub struct PySlidingWindowAscedMinSumDecoder {
-    decoder:
-        SlidingWindowDecoder<AscedDecoder<StandardBpDecoder<MinSumComputeEngine>>>,
+    decoder: SlidingWindowDecoder<
+        AscedDecoder<StandardBpDecoder<MinSumComputeEngine>>,
+    >,
 }
 
 #[gen_stub_pymethods]
@@ -719,6 +752,7 @@ impl PySlidingWindowAscedMinSumDecoder {
         splitter_weight: usize,
         num_batches: usize,
         delta: usize,
+        alpha: f64,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
@@ -744,7 +778,10 @@ impl PySlidingWindowAscedMinSumDecoder {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings { warm_start, W, F },
                 WindowAscedSettingsWrapper {
-                    inner_settings: StandardBpSettings { max_iter },
+                    inner_settings: StandardBpSettings {
+                        max_iter,
+                        engine_settings: MinSumSettings { alpha },
+                    },
                     asced_settings: AscedSettings {
                         splitter_weight,
                         num_batches,

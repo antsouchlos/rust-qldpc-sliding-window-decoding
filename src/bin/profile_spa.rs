@@ -1,7 +1,10 @@
 use rust_qldpc::decoders::{
     Decoder,
     bp::{StandardBpDecoder, StandardBpSettings},
-    engine::{ParityCheckMatrix, spa::SpaComputeEngine},
+    engine::{
+        ParityCheckMatrix,
+        spa::{SpaComputeEngine, SpaSettings},
+    },
 };
 
 use sprs::TriMat;
@@ -35,7 +38,12 @@ fn main() {
 
     let pcm = ParityCheckMatrix::new(&h);
 
-    let settings = StandardBpSettings { max_iter: 100 };
+    let settings = StandardBpSettings::<SpaSettings> {
+        max_iter: 100,
+        engine_settings: SpaSettings {
+            ..Default::default()
+        },
+    };
 
     let mut decoder = StandardBpDecoder::<SpaComputeEngine>::new(
         settings,
