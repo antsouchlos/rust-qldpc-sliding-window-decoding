@@ -98,13 +98,23 @@ class RunDir:
         self.path = path
         self.data_path = path / "data.csv"
 
-    def has_point(self, axis: str, value) -> bool:
-        return any(abs(value - done) < 1e-12 for done in self.done_values(axis))
-
-    def done_values(self, axis: str) -> list:
+    def has_row(self, params: dict) -> bool:
         if not self.data_path.exists():
-            return []
-        return [float(value) for value in pd.read_csv(self.data_path)[axis]]
+            return False
+
+        rows = pd.read_csv(self.data_path)
+        if not set(params) <= set(rows.columns):
+            return False
+
+        matches = pd.Series(True, index=rows.index)
+        for key, value in params.items():
+            column = rows[key]
+            if pd.api.types.is_float_dtype(column):
+                matches &= (column - float(value)).abs() < 1e-12
+            else:
+                matches &= column.astype(str) == str(value)
+
+        return bool(matches.any())
 
     def append(self, row: dict) -> None:
         is_new = not self.data_path.exists()
@@ -169,15 +179,11 @@ def load_experiment_runs(experiment: str, latest_only: bool = True) -> pd.DataFr
             if not data_path.exists():
                 continue
 
-            with open(run_dir / "meta.json") as handle:
-                axis = json.load(handle)["axis"]
-
-            frame = pd.read_csv(data_path).sort_values(axis)
+            frame = pd.read_csv(data_path)
             frame["curve"] = curve_dir.name
             frame["label"] = curve_dir.name.split("@")[0]
             frame["revision"] = _get_stamp_revision(run_dir.name)
             frame["run"] = run_dir.name
-            frame["axis"] = axis
             frames.append(frame)
 
     if not frames:

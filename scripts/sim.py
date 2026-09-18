@@ -140,52 +140,64 @@ def sweep(
     axis: str,
     axis_values,
     experiment: str,
-    circuit: dict,
+    circuit_params: dict,
     num_trials: int,
     seed: int,
     build_circuit: Callable = build_bb_72_circuit,
     batch_size_target: int = 1000,
     target_num_errors: int = 200,
 ):
-    """Simulate every (run, axis value) that is not already in its run directory."""
+    """
+    Simulate every (run, axis value) that is not already in its run directory.
+    """
 
     axis_triggers_circ_regen = axis in PARAMS_TRIGGERING_CIRC_REGEN
 
     missing = [
         key
         for key in PARAMS_TRIGGERING_CIRC_REGEN
-        if key != axis and key not in circuit
+        if key != axis and key not in circuit_params
     ]
     if missing:
         raise ValueError(f"circuit is missing {missing} (axis is {axis!r})")
 
     meta = {
-        "axis": axis,
-        "values": list(axis_values),
-        "circuit": circuit,
+        "circuit": circuit_params,
         "num_trials": num_trials,
         "seed": seed,
         "target_num_errors": target_num_errors,
     }
     run_dirs = {
-        run.label: resolve_and_open_run(experiment, run.label, run.params, meta)
+        run.label: resolve_and_open_run(
+            experiment,
+            run.label,
+            {key: value for key, value in run.params.items() if key != axis},
+            meta,
+        )
         for run in runs
     }
 
     built_circuit_params = None
 
     for value in axis_values:
-        pending = [
-            run for run in runs if not run_dirs[run.label].has_point(axis, value)
-        ]
+        circuit_params = (
+            {**circuit_params, axis: value}
+            if axis_triggers_circ_regen
+            else circuit_params
+        )
+        num_rounds = circuit_params["num_rounds"]
+
+        pending = []
+        for run in runs:
+            decoder_params = (
+                run.params if axis_triggers_circ_regen else {**run.params, axis: value}
+            )
+            if not run_dirs[run.label].has_row({**circuit_params, **decoder_params}):
+                pending.append((run, decoder_params))
+
         if not pending:
             print(f"{axis}: {value}, all runs done")
             continue
-
-        circuit_params = (
-            {**circuit, axis: value} if axis_triggers_circ_regen else circuit
-        )
-        num_rounds = circuit_params["num_rounds"]
 
         if circuit_params != built_circuit_params:
             built_circuit_params = dict(circuit_params)
@@ -193,10 +205,7 @@ def sweep(
                 _build_circuit_and_matrices(build_circuit, circuit_params)
             )
 
-        for run in pending:
-            decoder_params = (
-                run.params if axis_triggers_circ_regen else {**run.params, axis: value}
-            )
+        for run, decoder_params in pending:
             decoder = run.make_decoder(decoder_params)(H, priors, code, num_rounds)
 
             LER, total_trials = simulate_LER_batch(
@@ -211,10 +220,10 @@ def sweep(
 
             run_dirs[run.label].append(
                 {
-                    axis: value,
+                    **circuit_params,
+                    **decoder_params,
                     "LER": LER,
                     "num_trials": total_trials,
-                    "num_rounds": num_rounds,
                 }
             )
             print(
