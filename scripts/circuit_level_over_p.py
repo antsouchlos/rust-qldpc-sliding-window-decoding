@@ -48,7 +48,7 @@ experiment = "circuit-level-over-p"
 
 seed = 1
 num_rounds = 6
-num_trials = 10
+num_trials = 1000000
 
 ps = [0.001, 0.002, 0.003, 0.004, 0.005]
 
