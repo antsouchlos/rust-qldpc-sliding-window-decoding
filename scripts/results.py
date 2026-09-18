@@ -98,17 +98,15 @@ class RunDir:
         self.path = path
         self.data_path = path / "data.csv"
 
-    def has_p(self, p: float) -> bool:
-        return any(abs(p - done) < 1e-12 for done in self.done_ps())
+    def has_point(self, axis: str, value) -> bool:
+        return any(abs(value - done) < 1e-12 for done in self.done_values(axis))
 
-    def done_ps(self) -> list:
+    def done_values(self, axis: str) -> list:
         if not self.data_path.exists():
             return []
-        return [float(p) for p in pd.read_csv(self.data_path)["p"]]
+        return [float(value) for value in pd.read_csv(self.data_path)[axis]]
 
     def append(self, row: dict) -> None:
-        """Append one data point, flushing immediately."""
-
         is_new = not self.data_path.exists()
         with open(self.data_path, "a", newline="") as handle:
             writer = csv.DictWriter(handle, fieldnames=list(row))
@@ -171,14 +169,20 @@ def load_experiment_runs(experiment: str, latest_only: bool = True) -> pd.DataFr
             if not data_path.exists():
                 continue
 
-            frame = pd.read_csv(data_path)
+            with open(run_dir / "meta.json") as handle:
+                axis = json.load(handle)["axis"]
+
+            frame = pd.read_csv(data_path).sort_values(axis)
             frame["curve"] = curve_dir.name
             frame["label"] = curve_dir.name.split("@")[0]
             frame["revision"] = _get_stamp_revision(run_dir.name)
             frame["run"] = run_dir.name
+            frame["axis"] = axis
             frames.append(frame)
 
     if not frames:
         raise FileNotFoundError(f"No runs found under {RESULTS_ROOT / experiment}")
 
-    return pd.concat(frames, ignore_index=True).sort_values(["curve", "run", "p"])
+    return pd.concat(frames, ignore_index=True).sort_values(
+        ["curve", "run"], kind="stable"
+    )

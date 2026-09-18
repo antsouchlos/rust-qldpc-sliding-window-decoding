@@ -1,3 +1,4 @@
+import itertools
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -90,64 +91,116 @@ def simulate_LER_batch(
 #
 #
 
+PARAMS_TRIGGERING_CIRC_REGEN = ("p", "num_rounds")
+
 
 @dataclass
 class Run:
-    """
-    One curve of a sweep.
-
-    `label` names the run directory, `make_decoder` receives
-    `(H, priors, code, num_rounds)` and `params` is recorded in full so that
-    changing a parameter forks a new run directory.
-    """
-
     label: str
     make_decoder: Callable
     params: dict = field(default_factory=dict)
 
 
+def _format_label_value(value) -> str:
+    return f"{value:g}" if isinstance(value, float) else str(value)
+
+
+def build_run_grid(make: Callable, base_label: str, fixed=None, **axes) -> list:
+    """One `Run` per point of the cartesian product of `axes`."""
+
+    keys = list(axes)
+    runs = []
+
+    for values in itertools.product(*(axes[key] for key in keys)):
+        swept = dict(zip(keys, values))
+
+        label = "_".join(
+            [base_label]
+            + [f"{key}-{_format_label_value(value)}" for key, value in swept.items()]
+        )
+        runs.append(Run(label, make, {**(fixed or {}), **swept}))
+
+    return runs
+
+
+def _build_circuit_and_matrices(build_circuit: Callable, circuit: dict):
+    code, stim_circuit = build_circuit(circuit["p"], circuit["num_rounds"])
+
+    model = stim_circuit.detector_error_model(decompose_errors=False)
+    check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
+
+    H = csr_matrix(check_matrix)
+    priors = np.asarray(priors, dtype=np.float64)
+
+    return code, stim_circuit, H, observable_matrix, priors
+
+
 def sweep(
     runs,
-    ps,
+    axis: str,
+    axis_values,
     experiment: str,
-    num_rounds: int,
+    circuit: dict,
     num_trials: int,
     seed: int,
     build_circuit: Callable = build_bb_72_circuit,
     batch_size_target: int = 1000,
     target_num_errors: int = 200,
 ):
-    """Simulate every (run, p) that is not already present in its run directory."""
+    """Simulate every (run, axis value) that is not already in its run directory."""
+
+    axis_triggers_circ_regen = axis in PARAMS_TRIGGERING_CIRC_REGEN
+
+    missing = [
+        key
+        for key in PARAMS_TRIGGERING_CIRC_REGEN
+        if key != axis and key not in circuit
+    ]
+    if missing:
+        raise ValueError(f"circuit is missing {missing} (axis is {axis!r})")
 
     meta = {
-        "ps": list(ps),
-        "num_rounds": num_rounds,
+        "axis": axis,
+        "values": list(axis_values),
+        "circuit": circuit,
         "num_trials": num_trials,
         "seed": seed,
         "target_num_errors": target_num_errors,
     }
     run_dirs = {
-        run.label: resolve_and_open_run(experiment, run.label, run.params, meta) for run in runs
+        run.label: resolve_and_open_run(experiment, run.label, run.params, meta)
+        for run in runs
     }
 
-    for p in ps:
-        pending = [run for run in runs if not run_dirs[run.label].has_p(p)]
+    built_circuit_params = None
+
+    for value in axis_values:
+        pending = [
+            run for run in runs if not run_dirs[run.label].has_point(axis, value)
+        ]
         if not pending:
-            print(f"p: {p:.4f}, all runs done")
+            print(f"{axis}: {value}, all runs done")
             continue
 
-        code, circuit = build_circuit(p, num_rounds)
-        model = circuit.detector_error_model(decompose_errors=False)
-        check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
+        circuit_params = (
+            {**circuit, axis: value} if axis_triggers_circ_regen else circuit
+        )
+        num_rounds = circuit_params["num_rounds"]
 
-        H = csr_matrix(check_matrix)
-        priors = np.asarray(priors, dtype=np.float64)
+        if circuit_params != built_circuit_params:
+            built_circuit_params = dict(circuit_params)
+            code, stim_circuit, H, observable_matrix, priors = (
+                _build_circuit_and_matrices(build_circuit, circuit_params)
+            )
 
         for run in pending:
-            decoder = run.make_decoder(H, priors, code, num_rounds)
+            decoder_params = (
+                run.params if axis_triggers_circ_regen else {**run.params, axis: value}
+            )
+            decoder = run.make_decoder(decoder_params)(H, priors, code, num_rounds)
 
             LER, total_trials = simulate_LER_batch(
-                circuit,
+                stim_circuit,
                 decoder,
                 observable_matrix,
                 num_trials,
@@ -158,14 +211,15 @@ def sweep(
 
             run_dirs[run.label].append(
                 {
-                    "p": p,
+                    axis: value,
                     "LER": LER,
                     "num_trials": total_trials,
                     "num_rounds": num_rounds,
                 }
             )
             print(
-                f"{run.label}, p: {p:.4f}, LER: {LER:.6f}, num_trials: {total_trials}"
+                f"{run.label}, {axis}: {value}, "
+                f"LER: {LER:.6f}, num_trials: {total_trials}"
             )
 
     return {label: run_dir.path for label, run_dir in run_dirs.items()}
