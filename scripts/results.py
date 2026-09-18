@@ -73,7 +73,10 @@ def get_compiled_binary_hash() -> tuple:
 
 def get_commit_and_binary_hash() -> str:
     commit = _run_git_cmd("rev-parse", "--short=7", "HEAD") or "nogit"
-    return f"{commit}-dirty_{get_compiled_binary_hash()[1][:6]}"
+    if _is_worktree_dirty():
+        return f"{commit}-dirty_{get_compiled_binary_hash()[1][:6]}"
+    else:
+        return commit
 
 
 def get_git_stamp() -> str:
