@@ -60,17 +60,17 @@ experiment = "circuit-level-asced-exploration"
 
 seed = 1
 num_rounds = 6
-num_trials = 10
+num_trials = 1000000
 
-p_fixed = 0.004
+p_fixed = 0.003
 
 window_params = {"W": 5, "F": 1, "max_iter": 100, "warm_start": False}
-asced_params = {"delta": 2, "num_batches": 6, "splitter_weight": 4}
+asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 4}
 
 independent_vars = {
-    "splitter_weight": [2, 4, 6, 8],
-    "num_batches": [1, 2, 4, 6, 8],
-    "delta": [1, 2, 4, 6],
+    "splitter_weight": [50, 40, 30, 20, 10, 6, 4, 2],
+    # "num_batches": [1, 2, 4, 6, 8],
+    # "delta": [1, 2, 4, 6],
 }
 
 
