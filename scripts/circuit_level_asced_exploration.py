@@ -1,7 +1,6 @@
 from rust_qldpc import (
     SlidingWindowAscedMinSumDecoder,
     SlidingWindowMinSumDecoder,
-    StandardMinSumDecoder,
 )
 from sim import Run, sweep
 
@@ -38,17 +37,6 @@ def make_sw_min_sum(params):
     return make
 
 
-def make_min_sum(params):
-    def make(H, priors, code, num_rounds):
-        return StandardMinSumDecoder(
-            H=H,
-            priors=priors,
-            **params,
-        )
-
-    return make
-
-
 #
 #
 # Params
@@ -64,13 +52,15 @@ num_trials = 1000000
 
 p_fixed = 0.003
 
-window_params = {"W": 5, "F": 1, "max_iter": 100, "warm_start": False}
-asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 4}
+general_params = {"max_iter": 128, "alpha": 1.0}
+window_params = {"W": 5, "F": 1, "warm_start": False}
+asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 
 independent_vars = {
-    "splitter_weight": [50, 40, 30, 20, 10, 6, 4, 2],
-    # "num_batches": [1, 2, 4, 6, 8],
-    # "delta": [1, 2, 4, 6],
+    "splitter_weight": [600, 500, 400, 300, 200, 100, 50, 30, 20, 6, 4],
+    "num_batches": [1, 2, 4, 6, 8, 16, 32, 64],
+    "delta": [1, 2, 4, 6],
+    "max_iter": [32, 64, 100, 128, 256, 384, 512],
 }
 
 
@@ -81,18 +71,13 @@ independent_vars = {
 #
 
 
-# fmt: off
-runs = [
-]
-# fmt: on
-
 for axis, axis_values in independent_vars.items():
     sweep(
         [
             Run(
                 f"asced-ms_cold_{axis}",
                 make_sw_asced,
-                {**window_params, **asced_params, "alpha": 1.0},
+                {**general_params, **window_params, **asced_params},
             )
         ],
         axis=axis,
