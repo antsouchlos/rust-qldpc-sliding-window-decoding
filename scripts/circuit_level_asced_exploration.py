@@ -83,13 +83,18 @@ independent_vars = {
 
 # fmt: off
 runs = [
-    Run("asced-ms_cold_W5-F1-I100", make_sw_asced, {**window_params, **asced_params, "alpha": 1.0})
 ]
 # fmt: on
 
 for axis, axis_values in independent_vars.items():
     sweep(
-        runs,
+        [
+            Run(
+                f"asced-ms_cold_{axis}",
+                make_sw_asced,
+                {**window_params, **asced_params, "alpha": 1.0},
+            )
+        ],
         axis=axis,
         axis_values=axis_values,
         experiment=experiment,

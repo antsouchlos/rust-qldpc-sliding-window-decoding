@@ -52,8 +52,8 @@ num_trials = 10
 
 ps = [0.001, 0.002, 0.003, 0.004, 0.005]
 
-window = {"W": 5, "F": 1, "max_iter": 100}
-splitters = {"delta": 2, "num_batches": 6, "splitter_weight": 4}
+window_params = {"W": 5, "F": 1, "max_iter": 100}
+asced_params = {"delta": 2, "num_batches": 6, "splitter_weight": 4}
 
 #
 #
@@ -61,13 +61,23 @@ splitters = {"delta": 2, "num_batches": 6, "splitter_weight": 4}
 #
 #
 
-# fmt: off
 runs = [
-    Run("asced-ms_cold_W5-F1-d2-b6", make_asced, {**window, **splitters, "warm_start": False, "alpha": 1.0}),
-    Run("asced-ms_warm_W5-F1-d2-b6", make_asced, {**window, **splitters, "warm_start": True, "alpha": 1.0}),
-    Run("sw-ms_W5-F1", make_min_sum, {**window, "warm_start": False, "alpha": 1.0}),
+    Run(
+        f"asced-ms_cold_W{window_params['W']}-F{window_params['F']}-d{asced_params['d']}-b{asced_params['b']}-sw{asced_params['splitter_weight']}",
+        make_asced,
+        {**window_params, **asced_params, "warm_start": False, "alpha": 1.0},
+    ),
+    Run(
+        f"asced-ms_warm_W{window_params['W']}-F{window_params['F']}-d{asced_params['d']}-b{asced_params['b']}-sw{asced_params['splitter_weight']}",
+        make_asced,
+        {**window_params, **asced_params, "warm_start": True, "alpha": 1.0},
+    ),
+    Run(
+        f"sw-ms_{window_params['W']}-F{window_params['F']}",
+        make_min_sum,
+        {**window_params, "warm_start": False, "alpha": 1.0},
+    ),
 ]
-# fmt: on
 
 sweep(
     runs,
