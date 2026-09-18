@@ -10,7 +10,7 @@ from quits.simulation import get_stim_mem_result
 from scipy.sparse import csc_matrix, csr_matrix
 from tqdm import tqdm
 
-from results import open_run
+from results import resolve_and_open_run
 
 
 # TODO: Replace this with arbitrary size BB code generation
@@ -127,7 +127,7 @@ def sweep(
         "target_num_errors": target_num_errors,
     }
     run_dirs = {
-        run.label: open_run(experiment, run.label, run.params, meta) for run in runs
+        run.label: resolve_and_open_run(experiment, run.label, run.params, meta) for run in runs
     }
 
     for p in ps:

@@ -1,22 +1,20 @@
 """
-Run-identifiable result directories.
+Layout:
 
-Layout::
-
-    results/<experiment>/<label>@<param_hash>/<timestamp>-<commit>[+dirty]/
+    results/<experiment>/<label>@<param_hash>/<timestamp>-<commit>-dirty_<build_hash>/
         data.csv
         meta.json
         source.patch      # only when the worktree was dirty
 
-The label is handwritten and carries the parameters worth reading at a glance;
-the param hash covers the full parameter dict, so a parameter changed without a
-rename forks a new directory instead of mixing points into an old one. Reruns
-of identical parameters on identical source append to the existing directory,
-anything else starts a new one.
+- The build hash is calculated from the compiled *.so file and serves to
+  differentiate runs with different uncommitted code versions.
+- If matching runs already exist, datapoints are appended instead of
+  resimulating.
 """
 
 import csv
 import datetime
+import functools
 import hashlib
 import json
 import subprocess
@@ -30,14 +28,12 @@ RESULTS_ROOT = Path("results")
 
 #
 #
-# Run identity
+# Run identificationr
 #
 #
 
 
 def get_param_hash(params: dict) -> str:
-    """Hash used to separate runs with different parameters."""
-
     blob = json.dumps(params, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(blob.encode()).hexdigest()[:6]
 
@@ -52,17 +48,37 @@ def _run_git_cmd(*args: str) -> str:
     return completed.stdout.strip()
 
 
-def get_commit_with_dirty_tag() -> str:
-    """Short commit of the working tree, marked when it has uncommitted changes."""
+def _is_worktree_dirty() -> bool:
+    return bool(_run_git_cmd("status", "--porcelain"))
 
+
+@functools.cache
+def get_compiled_binary_hash() -> tuple:
+    import rust_qldpc
+
+    module = sys.modules.get("rust_qldpc.rust_qldpc")
+    module_file = getattr(module, "__file__", None)
+    if module_file:
+        path = Path(module_file)
+    else:
+        path = next(iter(sorted(Path(rust_qldpc.__file__).parent.glob("*.so"))))
+
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+
+    return str(path), digest.hexdigest()
+
+
+def get_commit_and_binary_hash() -> str:
     commit = _run_git_cmd("rev-parse", "--short=7", "HEAD") or "nogit"
-    dirty = "+dirty" if _run_git_cmd("status", "--porcelain") else ""
-    return f"{commit}{dirty}"
+    return f"{commit}-dirty_{get_compiled_binary_hash()[1][:6]}"
 
 
 def get_git_stamp() -> str:
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{timestamp}-{get_commit_with_dirty_tag()}"
+    return f"{timestamp}-{get_commit_and_binary_hash()}"
 
 
 def _get_stamp_revision(stamp: str) -> str:
@@ -105,7 +121,8 @@ def resolve_and_open_run(
     experiment: str, label: str, params: dict, meta=None
 ) -> RunDir:
     curve_dir = RESULTS_ROOT / experiment / f"{label}@{get_param_hash(params)}"
-    revision = get_commit_with_dirty_tag()
+    revision = get_commit_and_binary_hash()
+    build_path, build_hash = get_compiled_binary_hash()
 
     if curve_dir.exists():
         for stamp in sorted(p.name for p in curve_dir.iterdir() if p.is_dir()):
@@ -120,6 +137,8 @@ def resolve_and_open_run(
         "label": label,
         "params": params,
         "revision": revision,
+        "fingerprint": build_hash[:6],
+        "fingerprint_parts": {build_path: build_hash},
         "started": datetime.datetime.now().isoformat(timespec="seconds"),
         "argv": sys.argv,
         **(meta or {}),
@@ -127,7 +146,7 @@ def resolve_and_open_run(
     with open(run_dir / "meta.json", "w") as handle:
         json.dump(full_meta, handle, indent=2, sort_keys=True, default=str)
 
-    if revision.endswith("+dirty"):
+    if _is_worktree_dirty():
         (run_dir / "source.patch").write_text(_run_git_cmd("diff", "HEAD"))
 
     return RunDir(run_dir)
