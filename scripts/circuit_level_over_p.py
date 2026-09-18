@@ -1,4 +1,5 @@
 from rust_qldpc import (
+    AscedMinSumDecoder,
     SlidingWindowAscedMinSumDecoder,
     SlidingWindowMinSumDecoder,
     StandardMinSumDecoder,
@@ -41,6 +42,16 @@ def make_sw_min_sum(params):
 def make_min_sum(params):
     def make(H, priors, code, num_rounds):
         return StandardMinSumDecoder(
+            H=H,
+            priors=priors,
+            **params,
+        )
+
+    return make
+
+def make_asced(params):
+    def make(H, priors, code, num_rounds):
+        return AscedMinSumDecoder(
             H=H,
             priors=priors,
             **params,
@@ -109,6 +120,11 @@ runs = [
         "ms",
         make_min_sum,
         {**general_params},
+    ),
+    Run(
+        "asced-ms",
+        make_asced,
+        {**general_params, **asced_params},
     ),
 ]
 
