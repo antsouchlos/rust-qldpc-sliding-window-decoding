@@ -6,7 +6,7 @@ build-backend = "maturin"
 name = "rust-qldpc"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["numpy", "scipy"]
+dependencies = ["numpy", "scipy", "ldpc", "stim", "quits"]
 
 [tool.maturin]
 module-name = "rust_qldpc"
