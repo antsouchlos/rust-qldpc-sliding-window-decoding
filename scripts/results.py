@@ -1,12 +1,12 @@
 """
 Layout:
 
-    results/<experiment>/<label>@<param_hash>/<timestamp>-<commit>-dirty_<build_hash>/
+    results/<experiment>/<label>@<param_hash>/<timestamp>-<commit>[-dirty_<patch_hash>]/
         data.csv
         meta.json
         source.patch      # only when the worktree was dirty
 
-- The build hash is calculated from the compiled *.so file and serves to
+- The patch hash is calculated from `git diff HEAD` and serves to
   differentiate runs with different uncommitted code versions.
 - If matching runs already exist, datapoints are appended instead of
   resimulating.
@@ -48,40 +48,24 @@ def _run_git_cmd(*args: str) -> str:
     return completed.stdout.strip()
 
 
-def _is_worktree_dirty() -> bool:
-    return bool(_run_git_cmd("status", "--porcelain"))
-
-
 @functools.cache
-def get_compiled_binary_hash() -> tuple:
-    import rust_qldpc
-
-    module = sys.modules.get("rust_qldpc.rust_qldpc")
-    module_file = getattr(module, "__file__", None)
-    if module_file:
-        path = Path(module_file)
-    else:
-        path = next(iter(sorted(Path(rust_qldpc.__file__).parent.glob("*.so"))))
-
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-
-    return str(path), digest.hexdigest()
+def _get_patch() -> str:
+    return _run_git_cmd("diff", "HEAD")
 
 
-def get_commit_and_binary_hash() -> str:
+def get_revision() -> str:
     commit = _run_git_cmd("rev-parse", "--short=7", "HEAD") or "nogit"
-    if _is_worktree_dirty():
-        return f"{commit}-dirty_{get_compiled_binary_hash()[1][:6]}"
-    else:
+    patch = _get_patch()
+    if not patch:
         return commit
+
+    patch_hash = hashlib.sha256(patch.encode()).hexdigest()[:6]
+    return f"{commit}-dirty_{patch_hash}"
 
 
 def get_git_stamp() -> str:
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    return f"{timestamp}-{get_commit_and_binary_hash()}"
+    return f"{timestamp}-{get_revision()}"
 
 
 def _get_stamp_revision(stamp: str) -> str:
@@ -132,8 +116,7 @@ def resolve_and_open_run(
     experiment: str, label: str, params: dict, meta=None
 ) -> RunDir:
     curve_dir = RESULTS_ROOT / experiment / f"{label}@{get_param_hash(params)}"
-    revision = get_commit_and_binary_hash()
-    build_path, build_hash = get_compiled_binary_hash()
+    revision = get_revision()
 
     if curve_dir.exists():
         for stamp in sorted(p.name for p in curve_dir.iterdir() if p.is_dir()):
@@ -148,8 +131,6 @@ def resolve_and_open_run(
         "label": label,
         "params": params,
         "revision": revision,
-        "fingerprint": build_hash[:6],
-        "fingerprint_parts": {build_path: build_hash},
         "started": datetime.datetime.now().isoformat(timespec="seconds"),
         "argv": sys.argv,
         **(meta or {}),
@@ -157,8 +138,9 @@ def resolve_and_open_run(
     with open(run_dir / "meta.json", "w") as handle:
         json.dump(full_meta, handle, indent=2, sort_keys=True, default=str)
 
-    if _is_worktree_dirty():
-        (run_dir / "source.patch").write_text(_run_git_cmd("diff", "HEAD"))
+    patch = _get_patch()
+    if patch:
+        (run_dir / "source.patch").write_text(patch)
 
     return RunDir(run_dir)
 
