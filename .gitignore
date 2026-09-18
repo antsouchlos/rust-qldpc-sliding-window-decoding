@@ -1,5 +1,8 @@
 /target
 __pycache__/
+AGENTS.md
+results/
+figures/
 
 
 # Added by cargo
