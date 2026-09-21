@@ -60,6 +60,7 @@ def build_labels(run_dirs: list[Path]) -> list[str]:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("paths", nargs="+", type=Path)
+    parser.add_argument("--per-round-LER", action="store_true", dest="per_round_ler")
     args = parser.parse_args()
 
     run_dirs = [resolve_run_dir(path) for path in args.paths]
@@ -79,10 +80,28 @@ def main() -> None:
         axis = run_axis
 
         data = data.sort_values(axis)
-        sigma = np.sqrt(data["LER"] * (1 - data["LER"]) / data["num_trials"])
+        ler = data["LER"].to_numpy(dtype=float)
+        sigma = np.sqrt(ler * (1 - ler) / data["num_trials"].to_numpy())
+
+        if args.per_round_ler:
+            rounds = data["num_rounds"].to_numpy(dtype=float)
+            if not np.all(np.isfinite(rounds) & (rounds > 0)):
+                raise ValueError(f"num_rounds must be positive in {run_dir}")
+
+            survival = 1 - ler
+            derivative = np.zeros_like(ler)
+            np.power(
+                survival,
+                1 / rounds - 1,
+                out=derivative,
+                where=survival > 0,
+            )
+            sigma = derivative * sigma / rounds
+            ler = 1 - survival ** (1 / rounds)
+
         plt.errorbar(
             data[axis],
-            data["LER"],
+            ler,
             yerr=3 * sigma,
             marker="o",
             capsize=4,
@@ -90,7 +109,7 @@ def main() -> None:
         )
 
     plt.xlabel(axis)
-    plt.ylabel("LER")
+    plt.ylabel("LER per round" if args.per_round_ler else "LER")
     plt.yscale("log")
     plt.grid(True, which="both", alpha=0.3)
     plt.legend()
