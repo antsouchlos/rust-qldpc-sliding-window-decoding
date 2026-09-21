@@ -5,8 +5,7 @@ use sprs::CsMat;
 use crate::decoders::{
     Decoder,
     bp::{StandardBpDecoder, StandardBpSettings},
-    engine::{BpComputeEngine, ParityCheckMatrix},
-    sliding_window::InnerWindowDecoder,
+    engine::{AccessEngineInternals, ParityCheckMatrix},
 };
 use rand::{Rng, RngExt, SeedableRng};
 
@@ -151,6 +150,8 @@ pub trait InnerAscedDecoder: Decoder {
     ) -> Self;
 
     fn reset(&mut self);
+
+    fn channel_llr(&self, i: usize) -> f64;
 }
 
 #[derive(Clone)]
@@ -290,10 +291,21 @@ where
             .iter()
             .enumerate()
             .filter(|(_, e)| self.pcm.compute_syndrome(e) == s)
-            .min_by_key(|(_, e)| e.iter().filter(|&&b| b != 0).count());
+            .map(|(i, e)| {
+                let score = e
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, bit)| **bit != 0)
+                    .map(|(j, _)| {
+                        self.decoder_ensemble[0].decoder.channel_llr(j)
+                    })
+                    .sum::<f64>();
+                (i, e, score)
+            })
+            .min_by(|a, b| a.2.total_cmp(&b.2));
 
         match best {
-            Some((i, e)) => {
+            Some((i, e, _)) => {
                 self.last_chosen = Some(i);
                 e.clone()
             }
@@ -307,7 +319,7 @@ where
 
 impl<Engine> InnerAscedDecoder for StandardBpDecoder<Engine>
 where
-    Engine: BpComputeEngine,
+    Engine: AccessEngineInternals,
 {
     type Settings = StandardBpSettings<Engine::Settings>;
 
@@ -321,5 +333,9 @@ where
 
     fn reset(&mut self) {
         self.reset();
+    }
+
+    fn channel_llr(&self, i: usize) -> f64 {
+        self.engine.get_channel_llr(i)
     }
 }
