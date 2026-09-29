@@ -1,10 +1,12 @@
+from coordinator import Run, sweep
+
 from rust_qldpc import (
     AscedMinSumDecoder,
     SlidingWindowAscedMinSumDecoder,
     SlidingWindowMinSumDecoder,
     StandardMinSumDecoder,
 )
-from sim import Run, sweep
+from sim import make_LER_evaluator
 
 #
 #
@@ -73,6 +75,8 @@ seed = 1
 num_rounds = 6
 num_trials = 1000000
 
+LER_settings = {"num_trials": num_trials, "seed": seed, "target_num_errors": 200}
+
 ps = [0.001, 0.002, 0.003, 0.004, 0.005]
 
 general_params = {"max_iter": 128, "alpha": 1.0}
@@ -87,8 +91,8 @@ asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 
 runs = [
     Run(
-        f"asced-ms_cold_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
-        make_sw_asced,
+        f"sw-asced-ms_cold_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
+        make_LER_evaluator(make_sw_asced, **LER_settings),
         {
             **general_params,
             **window_params,
@@ -123,7 +127,7 @@ runs = [
     ),
     Run(
         "asced-ms",
-        make_asced,
+        make_LER_evaluator(make_asced, **LER_settings),
         {**general_params, **asced_params},
     ),
 ]
@@ -133,7 +137,6 @@ sweep(
     axis="p",
     axis_values=ps,
     experiment=experiment,
-    circuit_params={"num_rounds": num_rounds},
-    num_trials=num_trials,
-    seed=seed,
+    shared={"num_rounds": num_rounds},
+    meta=LER_settings,
 )

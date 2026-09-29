@@ -1,8 +1,10 @@
+from coordinator import Run, sweep
+
 from rust_qldpc import (
     SlidingWindowAscedMinSumDecoder,
     SlidingWindowMinSumDecoder,
 )
-from sim import Run, sweep
+from sim import make_LER_evaluator
 
 #
 #
@@ -50,6 +52,8 @@ seed = 1
 num_rounds = 6
 num_trials = 1000000
 
+LER_settings = {"num_trials": num_trials, "seed": seed, "target_num_errors": 200}
+
 p_fixed = 0.003
 
 general_params = {"max_iter": 128, "alpha": 1.0}
@@ -76,14 +80,13 @@ for axis, axis_values in independent_vars.items():
         [
             Run(
                 f"asced-ms_cold_{axis}",
-                make_sw_asced,
+                make_LER_evaluator(make_sw_asced, **LER_settings),
                 {**general_params, **window_params, **asced_params},
             )
         ],
         axis=axis,
         axis_values=axis_values,
         experiment=experiment,
-        circuit_params={"p": p_fixed, "num_rounds": num_rounds},
-        num_trials=num_trials,
-        seed=seed,
+        shared={"p": p_fixed, "num_rounds": num_rounds},
+        meta=LER_settings,
     )
