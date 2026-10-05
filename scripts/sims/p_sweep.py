@@ -51,6 +51,7 @@ def make_min_sum(params):
 
     return make
 
+
 def make_asced(params):
     def make(H, priors, code, num_rounds):
         return AscedMinSumDecoder(
@@ -69,7 +70,7 @@ def make_asced(params):
 #
 
 
-experiment = "circuit-level-over-p"
+experiment = "p_sweep"
 
 seed = 1
 num_rounds = 6

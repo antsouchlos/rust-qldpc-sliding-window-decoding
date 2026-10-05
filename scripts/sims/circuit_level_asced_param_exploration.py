@@ -46,7 +46,7 @@ def make_sw_min_sum(params):
 #
 
 
-experiment = "circuit-level-asced-exploration"
+experiment = "circuit_level_asced_param_exploration"
 
 seed = 1
 num_rounds = 6
