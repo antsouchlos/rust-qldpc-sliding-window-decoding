@@ -1,10 +1,10 @@
 from coordinator import Run, sweep
+from util import make_ler_evaluator
 
 from rust_qldpc import (
     SlidingWindowAscedMinSumDecoder,
     SlidingWindowMinSumDecoder,
 )
-from sim import make_LER_evaluator
 
 #
 #
@@ -80,7 +80,7 @@ for axis, axis_values in independent_vars.items():
         [
             Run(
                 f"asced-ms_cold_{axis}",
-                make_LER_evaluator(make_sw_asced, **LER_settings),
+                make_ler_evaluator(make_sw_asced, **LER_settings),
                 {**general_params, **window_params, **asced_params},
             )
         ],

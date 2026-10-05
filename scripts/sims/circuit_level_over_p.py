@@ -1,4 +1,5 @@
 from coordinator import Run, sweep
+from util import make_ler_evaluator
 
 from rust_qldpc import (
     AscedMinSumDecoder,
@@ -6,7 +7,6 @@ from rust_qldpc import (
     SlidingWindowMinSumDecoder,
     StandardMinSumDecoder,
 )
-from sim import make_LER_evaluator
 
 #
 #
@@ -92,7 +92,7 @@ asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 runs = [
     Run(
         f"sw-asced-ms_cold_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
-        make_LER_evaluator(make_sw_asced, **LER_settings),
+        make_ler_evaluator(make_sw_asced, **LER_settings),
         {
             **general_params,
             **window_params,
@@ -127,7 +127,7 @@ runs = [
     ),
     Run(
         "asced-ms",
-        make_LER_evaluator(make_asced, **LER_settings),
+        make_ler_evaluator(make_asced, **LER_settings),
         {**general_params, **asced_params},
     ),
 ]
