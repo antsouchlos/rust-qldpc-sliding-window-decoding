@@ -6,7 +6,17 @@ build-backend = "maturin"
 name = "rust-qldpc"
 version = "0.1.0"
 requires-python = ">=3.10"
-dependencies = ["numpy", "scipy", "ldpc", "stim", "quits"]
+dependencies = [
+    "numpy",
+    "scipy",
+    "ldpc",
+    "stim",
+    "quits",
+    "coordinator>=0.1.0",
+]
 
 [tool.maturin]
 module-name = "rust_qldpc"
+
+[tool.uv.sources]
+coordinator = { git = "https://github.com/antsouchlos/coordinator.git" }

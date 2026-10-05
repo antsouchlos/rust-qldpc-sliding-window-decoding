@@ -70,18 +70,18 @@ def make_asced(params):
 #
 
 
-experiment = "p_sweep"
+experiment = "forward_v_reverse_sliding"
 
 seed = 1
 num_rounds = 6
-num_trials = 1000000
+num_trials = 10
 
 LER_settings = {"num_trials": num_trials, "seed": seed, "target_num_errors": 200}
 
 ps = [0.001, 0.002, 0.003, 0.004, 0.005]
 
 general_params = {"max_iter": 128, "alpha": 1.0}
-window_params = {"W": 5, "F": 1}
+window_params = {"W": 3, "F": 1}
 asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 
 #
@@ -91,45 +91,65 @@ asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 #
 
 runs = [
+    # Run(
+    #     f"sw-asced-ms_cold_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
+    #     make_ler_evaluator(make_sw_asced, **LER_settings),
+    #     {
+    #         **general_params,
+    #         **window_params,
+    #         **asced_params,
+    #         "warm_start": False,
+    #     },
+    # ),
+    # Run(
+    #     f"sw-asced-ms_warm_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
+    #     make_ler_evaluator(make_sw_asced, **LER_settings),
+    #     {
+    #         **general_params,
+    #         **window_params,
+    #         **asced_params,
+    #         "warm_start": True,
+    #     },
+    # ),
     Run(
-        f"sw-asced-ms_cold_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
-        make_ler_evaluator(make_sw_asced, **LER_settings),
+        f"sw-ms_cold_forward_W{window_params['W']}-F{window_params['F']}",
+        make_ler_evaluator(make_sw_min_sum, **LER_settings),
         {
             **general_params,
             **window_params,
-            **asced_params,
             "warm_start": False,
+            "reverse_sliding_direction": False,
         },
     ),
     Run(
-        f"asced-ms_warm_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
-        make_sw_asced,
+        f"sw-ms_warm_forward_W{window_params['W']}-F{window_params['F']}",
+        make_ler_evaluator(make_sw_min_sum, **LER_settings),
         {
             **general_params,
             **window_params,
-            **asced_params,
             "warm_start": True,
+            "reverse_sliding_direction": False,
         },
     ),
     Run(
-        f"sw-ms_cold_W{window_params['W']}-F{window_params['F']}",
-        make_sw_min_sum,
-        {**general_params, **window_params, "warm_start": False},
+        f"sw-ms_cold_backward_W{window_params['W']}-F{window_params['F']}",
+        make_ler_evaluator(make_sw_min_sum, **LER_settings),
+        {
+            **general_params,
+            **window_params,
+            "warm_start": False,
+            "reverse_sliding_direction": True,
+        },
     ),
     Run(
-        f"sw-ms_warm_W{window_params['W']}-F{window_params['F']}",
-        make_sw_min_sum,
-        {**general_params, **window_params, "warm_start": True},
-    ),
-    Run(
-        "ms",
-        make_min_sum,
-        {**general_params},
-    ),
-    Run(
-        "asced-ms",
-        make_ler_evaluator(make_asced, **LER_settings),
-        {**general_params, **asced_params},
+        f"sw-ms_warm_backward_W{window_params['W']}-F{window_params['F']}",
+        make_ler_evaluator(make_sw_min_sum, **LER_settings),
+        {
+            **general_params,
+            **window_params,
+            "warm_start": True,
+            "reverse_sliding_direction": True,
+        },
     ),
 ]
 
