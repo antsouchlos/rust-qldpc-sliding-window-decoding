@@ -1,7 +1,10 @@
-use sprs::{CsMat, DenseVector};
+use sprs::CsMat;
 
 use crate::decoders::{
-    Decoder, asced::{AscedDecoder, AscedSettings, InnerAscedDecoder}, bp::{StandardBpDecoder, StandardBpSettings}, engine::{AccessEngineInternals, EdgeId, ParityCheckMatrix}
+    Decoder,
+    asced::{AscedDecoder, AscedSettings, InnerAscedDecoder},
+    bp::{StandardBpDecoder, StandardBpSettings},
+    engine::{AccessEngineInternals, EdgeId, ParityCheckMatrix},
 };
 
 use crate::windowing::{
@@ -14,6 +17,7 @@ use crate::windowing::{
 pub struct SlidingWindowSettings<InnerSettings: Clone> {
     pub inner_settings: InnerSettings,
     pub warm_start: bool,
+    pub reverse_sliding_direction: bool,
     pub F: usize,
     pub W: usize,
 }
@@ -139,12 +143,12 @@ where
         let next_syndrome_len = self.win_pcms[win_idx + 1].rows();
         let overlap_start = self.overlap_info.begin_positions[win_idx];
 
-        let mut e_hat_comitted = e_hat.to_vec();
-        for e_i in &mut e_hat_comitted[overlap_start.1..] {
+        let mut e_hat_committed = e_hat.to_vec();
+        for e_i in &mut e_hat_committed[overlap_start.1..] {
             *e_i = 0u8;
         }
 
-        let s = self.win_pcms[win_idx].compute_syndrome(&e_hat_comitted);
+        let s = self.win_pcms[win_idx].compute_syndrome(&e_hat_committed);
 
         let mut result = vec![0u8; next_syndrome_len];
         for (i, s_i) in s[overlap_start.0..].iter().enumerate() {
@@ -154,7 +158,7 @@ where
         result
     }
 
-    fn get_commited_e_hat<'a>(
+    fn get_committed_e_hat<'a>(
         &self,
         e_hat: &'a [u8],
         win_idx: usize,
@@ -166,6 +170,54 @@ where
         };
 
         &e_hat[0..end_idx]
+    }
+
+    fn decode_forward(&mut self, s: &[u8]) -> Vec<u8> {
+        let mut e_hat_total = Vec::<u8>::with_capacity(self.total_n);
+        let mut s_diff = vec![0u8; self.win_pcms[0].rows()];
+
+        for win_idx in 0..self.window_decoders.len() {
+            let mut s_win = self.cut_out_current_window_syndrome(s, win_idx);
+            vec_add_inplace(&mut s_win, &s_diff);
+
+            if self.settings.warm_start && win_idx > 0 {
+                self.transfer_soft_info_from_previous_window(win_idx);
+            }
+
+            let e_hat = self.window_decoders[win_idx].decode(&s_win);
+            e_hat_total.extend(self.get_committed_e_hat(&e_hat, win_idx));
+            s_diff = self.get_next_window_syndrome_diff(&e_hat, win_idx);
+        }
+
+        e_hat_total
+    }
+
+    fn decode_reverse(&mut self, s: &[u8]) -> Vec<u8> {
+        let mut e_hat_total = vec![0u8; self.total_n];
+
+        for win_idx in (0..self.window_decoders.len()).rev() {
+            if self.settings.warm_start
+                && win_idx + 1 < self.window_decoders.len()
+            {
+                self.transfer_soft_info_from_next_window(win_idx);
+            }
+
+            let s_win = self.cut_out_current_window_syndrome(s, win_idx);
+            let e_hat = self.window_decoders[win_idx].decode(&s_win);
+
+            let col_begin = self.window_borders[win_idx].0.1;
+            let col_end = self.window_borders[win_idx].1.1 + 1;
+            let committed_begin = if win_idx == 0 {
+                col_begin
+            } else {
+                self.window_borders[win_idx - 1].1.1 + 1
+            };
+
+            e_hat_total[committed_begin..col_end]
+                .copy_from_slice(&e_hat[committed_begin - col_begin..]);
+        }
+
+        e_hat_total
     }
 
     fn cut_out_current_window_syndrome(
@@ -217,6 +269,39 @@ where
             self.window_decoders[win_idx].set_channel_llr(i, llr);
         }
     }
+
+    fn transfer_soft_info_from_next_window(&mut self, win_idx: usize) {
+        assert!(win_idx + 1 < self.window_decoders.len());
+
+        let curr_win_overlap_start = self.overlap_info.begin_positions[win_idx];
+        let next_win_overlap_end = self.overlap_info.end_positions[win_idx];
+
+        let next_edges: Vec<EdgeId> = self.win_pcms[win_idx + 1]
+            .slice(&(..=next_win_overlap_end.0), &(..=next_win_overlap_end.1))
+            .collect();
+        let curr_edges: Vec<EdgeId> = self.win_pcms[win_idx]
+            .slice(&(curr_win_overlap_start.0..), &(curr_win_overlap_start.1..))
+            .collect();
+
+        assert_eq!(
+            next_edges.len(),
+            curr_edges.len(),
+            "overlap of windows {win_idx} and {} has mismatched edge counts",
+            win_idx + 1
+        );
+
+        for (src_edge, dest_edge) in next_edges.into_iter().zip(curr_edges) {
+            let msg =
+                self.window_decoders[win_idx + 1].get_cn_to_vn_msg(src_edge);
+            self.window_decoders[win_idx].set_cn_to_vn_msg(dest_edge, msg);
+        }
+
+        for i in 0..=next_win_overlap_end.1 {
+            let llr = self.window_decoders[win_idx + 1].get_channel_llr(i);
+            self.window_decoders[win_idx]
+                .set_channel_llr(curr_win_overlap_start.1 + i, llr);
+        }
+    }
 }
 
 fn vec_add_inplace(a: &mut [u8], b: &[u8]) {
@@ -232,26 +317,11 @@ where
     Engine: InnerWindowDecoder,
 {
     fn decode(&mut self, s: &[u8]) -> Vec<u8> {
-        let mut e_hat_total = Vec::<u8>::with_capacity(self.total_n);
-
-        let mut s_diff = Vec::<u8>::zeros(self.window_borders[0].1.0 + 1);
-
-        for win_idx in 0..self.window_decoders.len() {
-            let mut s_win = self.cut_out_current_window_syndrome(&s, win_idx);
-            vec_add_inplace(&mut s_win, &s_diff);
-
-            if self.settings.warm_start && win_idx >= 1 {
-                self.transfer_soft_info_from_previous_window(win_idx);
-            }
-
-            let e_hat: Vec<u8> =
-                self.window_decoders[win_idx].decode(&s_win).to_vec();
-
-            e_hat_total.extend(self.get_commited_e_hat(&e_hat, win_idx));
-            s_diff = self.get_next_window_syndrome_diff(&e_hat, win_idx);
+        if self.settings.reverse_sliding_direction {
+            self.decode_reverse(s)
+        } else {
+            self.decode_forward(s)
         }
-
-        e_hat_total
     }
 }
 
@@ -264,7 +334,7 @@ mod tests {
 
     use super::*;
 
-    use sprs::TriMat;
+    use sprs::{DenseVector, TriMat};
 
     fn get_hamming_h() -> sprs::CsMat<u8> {
         #[allow(non_snake_case)]
@@ -378,6 +448,7 @@ mod tests {
         >::new(
             SlidingWindowSettings {
                 warm_start: false,
+                reverse_sliding_direction: false,
                 F: 2,
                 W: 3,
                 inner_settings: StandardBpSettings {
@@ -407,7 +478,7 @@ mod tests {
         // Window 1
 
         let e_hat: Vec<u8> = (0..6).map(|v| v as u8).collect();
-        let got = decoder.get_commited_e_hat(&e_hat, 0);
+        let got = decoder.get_committed_e_hat(&e_hat, 0);
         let expected = vec![0, 1, 2, 3];
         assert_eq!(expected, got);
 
@@ -423,7 +494,7 @@ mod tests {
         // Window 1
 
         let e_hat: Vec<u8> = (0..4).map(|v| v as u8).collect();
-        let got = decoder.get_commited_e_hat(&e_hat, 1);
+        let got = decoder.get_committed_e_hat(&e_hat, 1);
         let expected = vec![0, 1, 2, 3];
         assert_eq!(expected, got);
 
@@ -438,7 +509,7 @@ mod tests {
     }
 
     #[test]
-    fn test_soft_info_passing() {
+    fn test_soft_info_passing_forward() {
         #[allow(non_snake_case)]
         let h = csr_from_dense(&[
             &[1, 1, 0, 0, 0, 0, 0, 0],
@@ -459,6 +530,7 @@ mod tests {
         >::new(
             SlidingWindowSettings {
                 warm_start: false,
+                reverse_sliding_direction: false,
                 F: 2,
                 W: 3,
                 inner_settings: StandardBpSettings {
@@ -519,6 +591,93 @@ mod tests {
             .collect();
 
         assert_eq!(channel_llrs, vec![4.0, 5.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_soft_info_passing_backward() {
+        #[allow(non_snake_case)]
+        let h = csr_from_dense(&[
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+        ]);
+
+        let channel_llrs =
+            (0..h.cols()).map(|v| v as f64).collect::<Vec<f64>>();
+
+        let mut decoder = SlidingWindowDecoder::<
+            StandardBpDecoder<MinSumComputeEngine>,
+        >::new(
+            SlidingWindowSettings {
+                warm_start: false,
+                reverse_sliding_direction: false,
+                F: 2,
+                W: 3,
+                inner_settings: StandardBpSettings {
+                    max_iter: 32,
+                    engine_settings: MinSumSettings { alpha: 1.0 },
+                },
+            },
+            &h,
+            2,
+            4 - 2,
+            &channel_llrs,
+        );
+
+        // 1 2 0 0    0  0  | 0 0
+        // 3 4 0 0    0  0  | 0 0
+        // 0 5 6 7    0  0  | 0 0
+        // 0 8 9 10   0  0  | 0 0
+        //          ...........
+        // 0 0 0 11 . 12 13 | 0 0
+        // 0 0 0 14 . 15 16 | 0 0
+        // -------- . ---------
+        // 0 0 0 0  . 0  1  | 1 1
+        // 0 0 0 0  . 0  1  | 1 1
+
+        let edge_ids: Vec<EdgeId> =
+            decoder.win_pcms[0].slice(&(..), &(..)).collect();
+        for (idx, eid) in edge_ids.into_iter().enumerate() {
+            decoder.window_decoders[0].set_cn_to_vn_msg(eid, (idx + 1) as f64);
+        }
+
+        for i in 0..6 {
+            decoder.window_decoders[0].set_channel_llr(i, i as f64);
+        }
+
+        let edge_ids: Vec<EdgeId> =
+            decoder.win_pcms[1].slice(&(..), &(..)).collect();
+        for (idx, eid) in edge_ids.into_iter().enumerate() {
+            decoder.window_decoders[1].set_cn_to_vn_msg(eid, (idx + 1) as f64);
+        }
+
+        for i in 0..4 {
+            decoder.window_decoders[1].set_channel_llr(i, i as f64);
+        }
+
+        decoder.transfer_soft_info_from_next_window(0);
+
+        let expected = vec![
+            1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 1.0, 2.0,
+            14.0, 3.0, 4.0,
+        ];
+
+        let got = decoder.win_pcms[0]
+            .slice(&(..), &(..))
+            .map(|e| decoder.window_decoders[0].get_cn_to_vn_msg(e))
+            .collect::<Vec<f64>>();
+        assert_eq!(expected, got);
+
+        let channel_llrs: Vec<f64> = (0..decoder.win_pcms[0].cols())
+            .map(|i| decoder.window_decoders[0].get_channel_llr(i))
+            .collect();
+
+        assert_eq!(channel_llrs, vec![0.0, 1.0, 2.0, 3.0, 0.0, 1.0]);
     }
 
     #[test]

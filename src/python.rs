@@ -251,6 +251,7 @@ impl PySlidingWindowMinSumDecoder {
         max_iter: usize,
         warm_start: bool,
         alpha: f64,
+        reverse_sliding_direction: bool,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
@@ -276,6 +277,7 @@ impl PySlidingWindowMinSumDecoder {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings {
                     warm_start,
+                    reverse_sliding_direction,
                     W,
                     F,
                     inner_settings: StandardBpSettings {
@@ -353,6 +355,7 @@ impl PySlidingWindowSpaDecoder {
         priors: PyReadonlyArray1<'_, f64>,
         max_iter: usize,
         warm_start: bool,
+        reverse_sliding_direction: bool,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
@@ -378,6 +381,7 @@ impl PySlidingWindowSpaDecoder {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings {
                     warm_start,
+                    reverse_sliding_direction,
                     W,
                     F,
                     inner_settings: StandardBpSettings {
@@ -660,6 +664,7 @@ impl PySlidingWindowAscedSpaDecoder {
         splitter_weight: usize,
         num_batches: usize,
         delta: usize,
+        reverse_sliding_direction: bool,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
@@ -685,6 +690,7 @@ impl PySlidingWindowAscedSpaDecoder {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings {
                     warm_start,
+                    reverse_sliding_direction,
                     W,
                     F,
                     inner_settings: AscedSettings {
@@ -775,6 +781,7 @@ impl PySlidingWindowAscedMinSumDecoder {
         num_batches: usize,
         delta: usize,
         alpha: f64,
+        reverse_sliding_direction: bool,
     ) -> PyResult<Self> {
         let h = extract_parity_check_matrix(H)?;
 
@@ -800,6 +807,7 @@ impl PySlidingWindowAscedMinSumDecoder {
             decoder: SlidingWindowDecoder::new(
                 SlidingWindowSettings {
                     warm_start,
+                    reverse_sliding_direction,
                     W,
                     F,
                     inner_settings: AscedSettings {
