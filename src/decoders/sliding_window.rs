@@ -205,6 +205,7 @@ where
             let s_win = self.cut_out_current_window_syndrome(s, win_idx);
             let e_hat = self.window_decoders[win_idx].decode(&s_win);
 
+            // Absolute coordinates
             let col_begin = self.window_borders[win_idx].0.1;
             let col_end = self.window_borders[win_idx].1.1 + 1;
             let committed_begin = if win_idx == 0 {
@@ -213,7 +214,9 @@ where
                 self.window_borders[win_idx - 1].1.1 + 1
             };
 
+            // Absolute coordinates
             e_hat_total[committed_begin..col_end]
+                // Transformation to relative coordinates
                 .copy_from_slice(&e_hat[committed_begin - col_begin..]);
         }
 
