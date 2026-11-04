@@ -14,6 +14,7 @@ use crate::decoders::engine::spa::{SpaComputeEngine, SpaSettings};
 use crate::decoders::sliding_window::{
     InnerWindowDecoder, SlidingWindowDecoder, SlidingWindowSettings,
 };
+use crate::windowing;
 
 fn extract_parity_check_matrix(h: &Bound<'_, PyAny>) -> PyResult<CsMat<u8>> {
     let h_csr_indptr: PyReadonlyArray1<i32> = h.getattr("indptr")?.extract()?;
@@ -47,6 +48,49 @@ fn extract_parity_check_matrix(h: &Bound<'_, PyAny>) -> PyResult<CsMat<u8>> {
         CsMat::new(h_shape, h_csr_indptr, h_csr_indices, h_csr_data.to_vec());
 
     Ok(h_csr)
+}
+
+#[gen_stub_pyfunction]
+#[pyfunction]
+#[pyo3(signature = (H, m, num_rounds, W, F, reverse_sliding_direction=false))]
+#[allow(non_snake_case)]
+fn get_window_borders(
+    #[gen_stub(override_type(
+        type_repr = "scipy.sparse.csr_matrix",
+        imports = ("scipy.sparse",)
+    ))]
+    H: &Bound<'_, PyAny>,
+    m: usize,
+    num_rounds: usize,
+    W: usize,
+    F: usize,
+    reverse_sliding_direction: bool,
+) -> PyResult<Vec<((usize, usize), (usize, usize))>> {
+    let h = extract_parity_check_matrix(H)?;
+
+    if m == 0 || F == 0 || W <= F {
+        return Err(PyValueError::new_err("require m > 0 and W > F > 0"));
+    }
+
+    let expected_rows = num_rounds
+        .checked_add(2)
+        .and_then(|rounds| rounds.checked_mul(m));
+    if expected_rows != Some(h.rows()) || h.cols() == 0 {
+        return Err(PyValueError::new_err(
+            "H must have (num_rounds + 2) * m rows and at least one column",
+        ));
+    }
+    if h.outer_iterator().any(|row| row.nnz() == 0) {
+        return Err(PyValueError::new_err("H must have no empty rows"));
+    }
+
+    if reverse_sliding_direction {
+        Ok(windowing::get_reverse_window_borders(
+            &h, m, num_rounds, W, F,
+        ))
+    } else {
+        Ok(windowing::get_window_borders(&h, m, num_rounds, W, F))
+    }
 }
 
 #[gen_stub_pyclass]
@@ -867,6 +911,7 @@ impl PySlidingWindowAscedMinSumDecoder {
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(get_window_borders, m)?)?;
     m.add_class::<PyStandardMinSumDecoder>()?;
     m.add_class::<PyStandardSpaDecoder>()?;
     m.add_class::<PySlidingWindowMinSumDecoder>()?;

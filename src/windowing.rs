@@ -93,6 +93,59 @@ pub fn get_window_borders(
     window_borders
 }
 
+#[allow(non_snake_case)]
+pub fn get_reverse_window_borders(
+    H: &CsMat<u8>,
+    m: usize,
+    num_rounds: usize,
+    W: usize,
+    F: usize,
+) -> Vec<((usize, usize), (usize, usize))> {
+    assert!(
+        W > F,
+        "W must be greater than F, otherwise consecutive windows do not overlap"
+    );
+
+    let num_windows = get_num_windows(num_rounds, W, F);
+    if num_windows == 1 {
+        return vec![((0, 0), (H.rows() - 1, H.cols() - 1))];
+    }
+
+    let h_csr = H.to_csr();
+    let i_min_per_row: Vec<usize> = h_csr
+        .outer_iterator()
+        .enumerate()
+        .map(|(j, row)| {
+            *row.indices()
+                .first()
+                .unwrap_or_else(|| panic!("row {j} of H is empty"))
+        })
+        .collect();
+
+    let mut window_borders = Vec::with_capacity(num_windows);
+    let mut col_end = H.cols() - 1;
+
+    for k in 0..num_windows - 1 {
+        let row_end = H.rows() - 1 - k * F * m;
+        let row_begin = row_end + 1 - W * m;
+        let col_begin =
+            *i_min_per_row[row_begin..=row_end].iter().min().unwrap();
+        let commit_row_begin = row_end + 1 - F * m;
+        let commit_col_begin = *i_min_per_row[commit_row_begin..=row_end]
+            .iter()
+            .min()
+            .unwrap();
+
+        window_borders.push(((row_begin, col_begin), (row_end, col_end)));
+        col_end = commit_col_begin - 1;
+    }
+
+    let row_end = H.rows() - 1 - (num_windows - 1) * F * m;
+    window_borders.push(((0, 0), (row_end, col_end)));
+    window_borders.reverse();
+    window_borders
+}
+
 pub fn get_overlap_info(
     window_borders: &Vec<((usize, usize), (usize, usize))>,
 ) -> OverlapInfo {
@@ -269,6 +322,53 @@ mod tests {
             vec![((0, 0), (5, 5)), ((2, 3), (7, 7)), ((4, 4), (8, 8))];
 
         assert_eq!(window_borders_2, expected_2);
+    }
+
+    #[test]
+    fn test_get_reverse_window_borders() {
+        let h = csr_from_dense(&[
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[1, 1, 0, 0, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 1, 1, 1, 0, 0, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 1, 1, 1, 0, 0],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+            &[0, 0, 0, 0, 0, 1, 1, 1],
+        ]);
+
+        assert_eq!(
+            get_reverse_window_borders(&h, 2, 2, 3, 1),
+            vec![((0, 0), (5, 4)), ((2, 1), (7, 7))]
+        );
+        assert_eq!(
+            get_reverse_window_borders(&h, 2, 2, 5, 1),
+            vec![((0, 0), (7, 7))]
+        );
+    }
+
+    #[test]
+    fn test_reverse_window_borders_with_short_final_window() {
+        let mut h = TriMat::<u8>::new((12, 12));
+        for row in 0..12 {
+            h.add_triplet(row, row, 1);
+            if row < 11 {
+                h.add_triplet(row, row + 1, 1);
+            }
+        }
+        let h = h.to_csr();
+
+        let borders = get_reverse_window_borders(&h, 2, 4, 3, 2);
+        assert_eq!(
+            borders,
+            vec![((0, 0), (3, 3)), ((2, 2), (7, 7)), ((6, 6), (11, 11)),]
+        );
+
+        let committed_ranges = [0..4, 4..8, 8..12];
+        for (border, committed_range) in borders.iter().zip(committed_ranges) {
+            assert!(border.0.1 <= committed_range.start);
+            assert!(committed_range.end - 1 <= border.1.1);
+        }
     }
 
     #[test]

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use sprs::CsMat;
 
 use crate::decoders::{
@@ -8,8 +10,8 @@ use crate::decoders::{
 };
 
 use crate::windowing::{
-    OverlapInfo, get_overlap_info, get_window_borders, split_channel_llrs,
-    split_pcm,
+    OverlapInfo, get_overlap_info, get_reverse_window_borders,
+    get_window_borders, split_channel_llrs, split_pcm,
 };
 
 #[derive(Clone)]
@@ -53,6 +55,7 @@ where
     window_borders: Vec<((usize, usize), (usize, usize))>,
     overlap_info: OverlapInfo,
     win_pcms: Vec<ParityCheckMatrix>,
+    reverse_h_csc: Option<Arc<CsMat<u8>>>,
     total_n: usize,
 }
 
@@ -68,8 +71,11 @@ where
         num_rounds: usize,
         channel_llrs: &[f64],
     ) -> Self {
-        let window_borders =
-            get_window_borders(&H, m, num_rounds, settings.W, settings.F);
+        let window_borders = if settings.reverse_sliding_direction {
+            get_reverse_window_borders(H, m, num_rounds, settings.W, settings.F)
+        } else {
+            get_window_borders(H, m, num_rounds, settings.W, settings.F)
+        };
 
         let win_hs = split_pcm(&H, &window_borders);
         let win_llrs = split_channel_llrs(&channel_llrs, &window_borders);
@@ -91,6 +97,9 @@ where
             .iter()
             .map(|win_h| ParityCheckMatrix::new(&win_h))
             .collect();
+        let reverse_h_csc = settings
+            .reverse_sliding_direction
+            .then(|| Arc::new(H.to_csc()));
 
         Self {
             settings,
@@ -98,6 +107,7 @@ where
             window_borders,
             overlap_info,
             win_pcms: win_pcms,
+            reverse_h_csc,
             total_n: H.cols(),
         }
     }
@@ -194,6 +204,7 @@ where
 
     fn decode_reverse(&mut self, s: &[u8]) -> Vec<u8> {
         let mut e_hat_total = vec![0u8; self.total_n];
+        let mut syndrome_diff = vec![0u8; s.len()];
 
         for win_idx in (0..self.window_decoders.len()).rev() {
             if self.settings.warm_start
@@ -202,10 +213,12 @@ where
                 self.transfer_soft_info_from_next_window(win_idx);
             }
 
-            let s_win = self.cut_out_current_window_syndrome(s, win_idx);
+            let mut s_win = self.cut_out_current_window_syndrome(s, win_idx);
+            let row_begin = self.window_borders[win_idx].0.0;
+            let row_end = self.window_borders[win_idx].1.0;
+            vec_add_inplace(&mut s_win, &syndrome_diff[row_begin..=row_end]);
             let e_hat = self.window_decoders[win_idx].decode(&s_win);
 
-            // Absolute coordinates
             let col_begin = self.window_borders[win_idx].0.1;
             let col_end = self.window_borders[win_idx].1.1 + 1;
             let committed_begin = if win_idx == 0 {
@@ -214,10 +227,15 @@ where
                 self.window_borders[win_idx - 1].1.1 + 1
             };
 
-            // Absolute coordinates
+            let committed_e_hat = &e_hat[committed_begin - col_begin..];
             e_hat_total[committed_begin..col_end]
-                // Transformation to relative coordinates
-                .copy_from_slice(&e_hat[committed_begin - col_begin..]);
+                .copy_from_slice(committed_e_hat);
+            xor_column_syndromes(
+                self.reverse_h_csc.as_ref().unwrap(),
+                &mut syndrome_diff,
+                committed_begin,
+                committed_e_hat,
+            );
         }
 
         e_hat_total
@@ -315,6 +333,23 @@ fn vec_add_inplace(a: &mut [u8], b: &[u8]) {
     }
 }
 
+fn xor_column_syndromes(
+    h_csc: &CsMat<u8>,
+    syndrome_diff: &mut [u8],
+    col_begin: usize,
+    e_hat: &[u8],
+) {
+    for (offset, &bit) in e_hat.iter().enumerate() {
+        if bit == 1 {
+            for (row, &value) in
+                h_csc.outer_view(col_begin + offset).unwrap().iter()
+            {
+                syndrome_diff[row] ^= value;
+            }
+        }
+    }
+}
+
 impl<Engine> Decoder for SlidingWindowDecoder<Engine>
 where
     Engine: InnerWindowDecoder,
@@ -371,6 +406,69 @@ mod tests {
             }
         }
         tri.to_csr()
+    }
+
+    #[test]
+    fn test_reverse_committed_syndrome_accumulates_across_windows() {
+        let mut h = TriMat::<u8>::new((10, 10));
+        for index in 0..10 {
+            h.add_triplet(index, index, 1);
+        }
+        h.add_triplet(3, 6, 1);
+        h.add_triplet(3, 8, 1);
+        let h = h.to_csr();
+        let borders = get_reverse_window_borders(&h, 2, 3, 3, 1);
+        assert_eq!(
+            borders,
+            vec![((0, 0), (5, 5)), ((2, 2), (7, 7)), ((4, 4), (9, 9)),]
+        );
+
+        let mut syndrome_diff = vec![0u8; h.rows()];
+        let h_csc = h.to_csc();
+        xor_column_syndromes(&h_csc, &mut syndrome_diff, 8, &[1, 0]);
+        assert_eq!(syndrome_diff[3], 1);
+        assert_eq!(syndrome_diff[8], 1);
+
+        xor_column_syndromes(&h_csc, &mut syndrome_diff, 6, &[1, 0]);
+        assert_eq!(syndrome_diff[3], 0);
+        assert_eq!(syndrome_diff[6], 1);
+        assert_eq!(syndrome_diff[8], 1);
+    }
+
+    #[test]
+    fn test_reverse_decode_uses_committed_syndrome() {
+        let mut h = TriMat::<u8>::new((10, 10));
+        for index in 0..10 {
+            h.add_triplet(index, index, 1);
+        }
+        h.add_triplet(3, 6, 1);
+        h.add_triplet(3, 8, 1);
+        let h = h.to_csr();
+        let channel_llrs = vec![(99.0_f64).ln(); h.cols()];
+        let mut decoder = SlidingWindowDecoder::<
+            StandardBpDecoder<MinSumComputeEngine>,
+        >::new(
+            SlidingWindowSettings {
+                warm_start: false,
+                reverse_sliding_direction: true,
+                F: 1,
+                W: 3,
+                inner_settings: StandardBpSettings {
+                    max_iter: 32,
+                    engine_settings: MinSumSettings { alpha: 1.0 },
+                },
+            },
+            &h,
+            2,
+            3,
+            &channel_llrs,
+        );
+
+        let mut error = vec![0u8; h.cols()];
+        error[6] = 1;
+        error[8] = 1;
+        let syndrome = ParityCheckMatrix::new(&h).compute_syndrome(&error);
+        assert_eq!(decoder.decode(&syndrome), error);
     }
 
     #[test]

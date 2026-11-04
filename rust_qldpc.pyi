@@ -15,6 +15,7 @@ __all__ = [
     "SlidingWindowSpaDecoder",
     "StandardMinSumDecoder",
     "StandardSpaDecoder",
+    "get_window_borders",
 ]
 
 @typing.final
@@ -64,4 +65,6 @@ class StandardSpaDecoder:
     def __new__(cls, H: scipy.sparse.csr_matrix, priors: numpy.typing.NDArray[numpy.float64], max_iter: builtins.int) -> StandardSpaDecoder: ...
     def decode(self, syndrome: typing.Sequence[builtins.int]) -> numpy.typing.NDArray[numpy.uint8]: ...
     def decode_batch(self, syndromes: numpy.typing.NDArray[numpy.uint8]) -> numpy.typing.NDArray[numpy.uint8]: ...
+
+def get_window_borders(H: scipy.sparse.csr_matrix, m: builtins.int, num_rounds: builtins.int, W: builtins.int, F: builtins.int, reverse_sliding_direction: builtins.bool = False) -> builtins.list[tuple[tuple[builtins.int, builtins.int], tuple[builtins.int, builtins.int]]]: ...
 

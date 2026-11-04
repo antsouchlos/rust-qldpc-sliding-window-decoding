@@ -128,8 +128,10 @@ F = 1
 
 ps = [0.001, 0.002, 0.003, 0.004, 0.005]
 
-LERs_own_spa = []
-LERs_own_min_sum = []
+LERs_own_spa_forward = []
+LERs_own_spa_backward = []
+LERs_own_min_sum_forward = []
+LERs_own_min_sum_backward = []
 LERs_roffe_spa = []
 LERs_roffe_min_sum = []
 
@@ -141,20 +143,27 @@ for p in ps:
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
     H_csr = csr_matrix(check_matrix)
-    decoder = SlidingWindowSpaDecoder(
-        H=H_csr,
-        m=code.hz.shape[0],
-        num_rounds=num_rounds,
-        W=W,
-        F=F,
-        priors=priors,
-        max_iter=max_iter,
-        warm_start=False,
-    )
+    for direction, reverse_sliding_direction, trial_seed, results in (
+        ("forward", False, seed, LERs_own_spa_forward),
+        ("backward", True, seed + 2, LERs_own_spa_backward),
+    ):
+        decoder = SlidingWindowSpaDecoder(
+            H=H_csr,
+            m=code.hz.shape[0],
+            num_rounds=num_rounds,
+            W=W,
+            F=F,
+            priors=priors,
+            max_iter=max_iter,
+            warm_start=False,
+            reverse_sliding_direction=reverse_sliding_direction,
+        )
 
-    LER = simulate_LER_batch(circuit, decoder, observable_matrix, num_trials, seed)
-    LERs_own_spa.append(LER)
-    print(f"p: {p:.3f}, LER: {LER:.6f}")
+        LER = simulate_LER_batch(
+            circuit, decoder, observable_matrix, num_trials, trial_seed
+        )
+        results.append(LER)
+        print(f"{direction}, p: {p:.3f}, LER: {LER:.6f}")
 
 print("Min-Sum (own impl):")
 for p in ps:
@@ -164,21 +173,28 @@ for p in ps:
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
 
     H_csr = csr_matrix(check_matrix)
-    decoder = SlidingWindowMinSumDecoder(
-        H_csr,
-        code.hz.shape[0],
-        num_rounds,
-        W,
-        F,
-        priors,
-        max_iter=max_iter,
-        warm_start=False,
-        alpha=1.0,
-    )
+    for direction, reverse_sliding_direction, trial_seed, results in (
+        ("forward", False, seed + 1, LERs_own_min_sum_forward),
+        ("backward", True, seed + 3, LERs_own_min_sum_backward),
+    ):
+        decoder = SlidingWindowMinSumDecoder(
+            H=H_csr,
+            m=code.hz.shape[0],
+            num_rounds=num_rounds,
+            W=W,
+            F=F,
+            priors=priors,
+            max_iter=max_iter,
+            warm_start=False,
+            alpha=1.0,
+            reverse_sliding_direction=reverse_sliding_direction,
+        )
 
-    LER = simulate_LER_batch(circuit, decoder, observable_matrix, num_trials, seed + 1)
-    LERs_own_min_sum.append(LER)
-    print(f"p: {p:.3f}, LER: {LER:.6f}")
+        LER = simulate_LER_batch(
+            circuit, decoder, observable_matrix, num_trials, trial_seed
+        )
+        results.append(LER)
+        print(f"{direction}, p: {p:.3f}, LER: {LER:.6f}")
 
 print("SPA (Roffe et al. package):")
 for p in ps:
@@ -228,22 +244,17 @@ for p in ps:
     LERs_roffe_min_sum.append(LER)
     print(f"p: {p:.3f}, LER: {LER:.6f}")
 
-LERs_own_spa = np.array(LERs_own_spa)
-LERs_own_min_sum = np.array(LERs_own_min_sum)
-LERs_roffe_spa = np.array(LERs_roffe_spa)
-LERs_roffe_min_sum = np.array(LERs_roffe_min_sum)
-
 plt.figure()
 
-for LERs, label in zip(
-    [LERs_roffe_spa, LERs_own_spa, LERs_roffe_min_sum, LERs_own_min_sum],
-    [
-        "SPA [Roffe et al.]",
-        "SPA [own]",
-        "Min-sum [Roffe et al.]",
-        "Min-sum [own]",
-    ],
+for results, label in (
+    (LERs_roffe_spa, "SPA [Roffe et al., forward]"),
+    (LERs_own_spa_forward, "SPA [own, forward]"),
+    (LERs_own_spa_backward, "SPA [own, backward]"),
+    (LERs_roffe_min_sum, "Min-sum [Roffe et al., forward]"),
+    (LERs_own_min_sum_forward, "Min-sum [own, forward]"),
+    (LERs_own_min_sum_backward, "Min-sum [own, backward]"),
 ):
+    LERs = np.asarray(results)
     LERs_per_round = 1 - (1 - LERs) ** (1 / num_rounds)
 
     # Binomial distribution / num_trials

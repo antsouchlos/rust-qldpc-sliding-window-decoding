@@ -57,7 +57,12 @@ LER_settings = {"num_trials": num_trials, "seed": seed, "target_num_errors": 200
 p_fixed = 0.003
 
 general_params = {"max_iter": 128, "alpha": 1.0}
-window_params = {"W": 5, "F": 1, "warm_start": False}
+window_params = {
+    "W": 5,
+    "F": 1,
+    "warm_start": False,
+    "reverse_sliding_direction": False,
+}
 asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 
 independent_vars = {
