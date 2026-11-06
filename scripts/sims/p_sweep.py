@@ -74,9 +74,9 @@ experiment = "forward_v_reverse_sliding"
 
 seed = 1
 num_rounds = 6
-num_trials = 10
+num_trials = 1_000_000
 
-LER_settings = {"num_trials": num_trials, "seed": seed, "target_num_errors": 200}
+LER_settings = {"num_trials": num_trials, "seed": seed, "target_num_errors": 1_000}
 
 ps = [0.001, 0.002, 0.003, 0.004, 0.005]
 
