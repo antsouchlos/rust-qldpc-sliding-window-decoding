@@ -7,7 +7,7 @@ import numpy as np
 import stim
 from quits import CircuitBuildOptions, ErrorModel
 from quits.decoder import detector_error_model_to_matrix
-from quits.qldpc_code import BbCode
+from quits.qldpc_code import BbCode, QldpcCode
 from quits.simulation import get_stim_mem_result
 from scipy.sparse import csc_matrix, csr_matrix
 from tqdm import tqdm
@@ -146,17 +146,28 @@ def make_parallel_batch_decoder(decoder_cls):
 CIRCUIT_PARAMS = ("p", "num_rounds")
 
 
-# TODO: Replace this with arbitrary size BB code generation
-def build_bb_72_circuit(p: float, num_rounds: int):
-    code = BbCode(
-        l=6,
-        m=6,
-        A_x_pows=[3],
-        A_y_pows=[1, 2],
-        B_x_pows=[1, 2],
-        B_y_pows=[3],
-    )
+def build_bb_code(N: int):
+    # Code definitions from scripts/tests/test_asced.py.
+    # fmt: off
+    if N == 72:
+        return BbCode(l=6, m=6, A_x_pows=[3], A_y_pows=[1, 2], B_x_pows=[1, 2], B_y_pows=[3])
+    if N == 90:
+        return BbCode(l=15, m=3, A_x_pows=[9], A_y_pows=[1, 2], B_x_pows=[2, 7], B_y_pows=[0])
+    if N == 108:
+        return BbCode(l=9, m=6, A_x_pows=[3], A_y_pows=[1, 2], B_x_pows=[1, 2], B_y_pows=[3])
+    if N == 144:
+        return BbCode(l=12, m=6, A_x_pows=[3], A_y_pows=[1, 2], B_x_pows=[1, 2], B_y_pows=[3])
+    if N == 288:
+        return BbCode(l=12, m=12, A_x_pows=[3], A_y_pows=[2, 7], B_x_pows=[1, 2], B_y_pows=[3])
+    if N == 360:
+        return BbCode(l=30, m=6, A_x_pows=[9], A_y_pows=[1, 2], B_x_pows=[25, 26], B_y_pows=[3])
+    if N == 756:
+        return BbCode(l=21, m=18, A_x_pows=[3], A_y_pows=[10, 17], B_x_pows=[3, 19], B_y_pows=[5])
+    # fmt: on
+    raise ValueError(f"Unsupported BB code size: {N}")
 
+
+def build_code_circuit(p: float, num_rounds: int, code: QldpcCode):
     circuit = code.build_circuit(
         error_model=ErrorModel(p, p, p, p),
         num_rounds=num_rounds,
@@ -169,8 +180,8 @@ def build_bb_72_circuit(p: float, num_rounds: int):
 
 
 @functools.lru_cache(maxsize=1)
-def build_circuit_and_matrices(p: float, num_rounds: int):
-    code, stim_circuit = build_bb_72_circuit(p, num_rounds)
+def build_circuit_and_matrices(p: float, num_rounds: int, code: QldpcCode):
+    code, stim_circuit = build_code_circuit(p, num_rounds, code)
 
     model = stim_circuit.detector_error_model(decompose_errors=False)
     check_matrix, observable_matrix, priors = detector_error_model_to_matrix(model)
@@ -244,6 +255,7 @@ def derive_ler_statistics(LER: float, num_trials: int, num_rounds: int) -> dict:
 
 def make_ler_evaluator(
     make_decoder: Callable,
+    code: QldpcCode,
     num_trials: int,
     seed: int,
     target_num_errors: int,
@@ -251,8 +263,8 @@ def make_ler_evaluator(
 ) -> Callable[[dict], dict]:
     def evaluate(point: dict) -> dict:
         num_rounds = point["num_rounds"]
-        code, stim_circuit, H, observable_matrix, priors = build_circuit_and_matrices(
-            point["p"], num_rounds
+        _, stim_circuit, H, observable_matrix, priors = build_circuit_and_matrices(
+            point["p"], num_rounds, code
         )
 
         decoder_params = {

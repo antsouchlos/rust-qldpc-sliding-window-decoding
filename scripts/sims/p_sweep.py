@@ -1,5 +1,5 @@
 from coordinator import Run, sweep
-from util import make_ler_evaluator
+from util import build_bb_code, make_ler_evaluator
 
 from rust_qldpc import (
     AscedMinSumDecoder,
@@ -35,7 +35,12 @@ def make_sw_min_sum(params):
             m=code.hz.shape[0],
             num_rounds=num_rounds,
             priors=priors,
-            **params,
+            max_iter=params["max_iter"],
+            alpha=params["alpha"],
+            W=params["W"],
+            F=params["F"],
+            warm_start=params["warm_start"],
+            reverse_sliding_direction=params["reverse_sliding_direction"],
         )
 
     return make
@@ -75,12 +80,18 @@ experiment = "forward_v_reverse_sliding"
 seed = 1
 num_rounds = 6
 num_trials = 1_000_000
+code_size = 144
 
-LER_settings = {"num_trials": num_trials, "seed": seed, "target_num_errors": 1_000}
+eval_settings = {
+    "num_trials": num_trials,
+    "seed": seed,
+    "target_num_errors": 1_000,
+    "code": build_bb_code(code_size),
+}
 
 ps = [0.001, 0.002, 0.003, 0.004, 0.005]
 
-general_params = {"max_iter": 128, "alpha": 1.0}
+general_params = {"max_iter": 128, "alpha": 1.0, "code_name": f"BB{code_size}"}
 window_params = {"W": 3, "F": 1, "reverse_sliding_direction": False}
 asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 
@@ -113,7 +124,7 @@ runs = [
     # ),
     Run(
         f"sw-ms_cold_forward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_min_sum, **LER_settings),
+        make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
@@ -123,7 +134,7 @@ runs = [
     ),
     Run(
         f"sw-ms_warm_forward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_min_sum, **LER_settings),
+        make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
@@ -133,7 +144,7 @@ runs = [
     ),
     Run(
         f"sw-ms_cold_backward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_min_sum, **LER_settings),
+        make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
@@ -143,7 +154,7 @@ runs = [
     ),
     Run(
         f"sw-ms_warm_backward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_min_sum, **LER_settings),
+        make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
@@ -159,5 +170,5 @@ sweep(
     axis_values=ps,
     experiment=experiment,
     shared={"num_rounds": num_rounds},
-    meta=LER_settings,
+    meta={**eval_settings},
 )

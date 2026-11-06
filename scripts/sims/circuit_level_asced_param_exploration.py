@@ -1,5 +1,5 @@
 from coordinator import Run, sweep
-from util import make_ler_evaluator
+from util import build_bb_code, make_ler_evaluator
 
 from rust_qldpc import (
     SlidingWindowAscedMinSumDecoder,
@@ -47,6 +47,7 @@ def make_sw_min_sum(params):
 
 
 experiment = "circuit_level_asced_param_exploration"
+code = build_bb_code(72)
 
 seed = 1
 num_rounds = 6
@@ -85,7 +86,7 @@ for axis, axis_values in independent_vars.items():
         [
             Run(
                 f"asced-ms_cold_{axis}",
-                make_ler_evaluator(make_sw_asced, **LER_settings),
+                make_ler_evaluator(make_sw_asced, code=code, **LER_settings),
                 {**general_params, **window_params, **asced_params},
             )
         ],

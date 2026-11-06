@@ -5,7 +5,7 @@ from matplotlib.patches import Patch, Rectangle
 
 from rust_qldpc import get_window_borders
 
-from util import build_circuit_and_matrices
+from util import build_bb_code, build_circuit_and_matrices
 
 
 def paint_windows(axis, H, window_borders):
@@ -56,7 +56,9 @@ def main():
     parser.add_argument("--num-rounds", type=int, default=6)
     args = parser.parse_args()
 
-    code, _, H, _, _ = build_circuit_and_matrices(0.001, args.num_rounds)
+    code, _, H, _, _ = build_circuit_and_matrices(
+        0.001, args.num_rounds, build_bb_code(72)
+    )
     forward_borders = get_window_borders(
         H, code.hz.shape[0], args.num_rounds, args.W, args.F
     )
