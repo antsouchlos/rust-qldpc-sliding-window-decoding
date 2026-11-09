@@ -22,7 +22,15 @@ def make_sw_asced(params):
             m=code.hz.shape[0],
             num_rounds=num_rounds,
             priors=priors,
-            **params,
+            max_iter=params["max_iter"],
+            alpha=params["alpha"],
+            W=params["W"],
+            F=params["F"],
+            warm_start=params["warm_start"],
+            reverse_sliding_direction=params["reverse_sliding_direction"],
+            delta=params["delta"],
+            num_batches=params["num_batches"],
+            splitter_weight=params["splitter_weight"],
         )
 
     return make
@@ -51,7 +59,8 @@ def make_min_sum(params):
         return StandardMinSumDecoder(
             H=H,
             priors=priors,
-            **params,
+            max_iter=params["max_iter"],
+            alpha=params["alpha"],
         )
 
     return make
@@ -62,7 +71,11 @@ def make_asced(params):
         return AscedMinSumDecoder(
             H=H,
             priors=priors,
-            **params,
+            max_iter=params["max_iter"],
+            alpha=params["alpha"],
+            delta=params["delta"],
+            num_batches=params["num_batches"],
+            splitter_weight=params["splitter_weight"],
         )
 
     return make
@@ -102,28 +115,22 @@ asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 #
 
 runs = [
-    # Run(
-    #     f"sw-asced-ms_cold_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
-    #     make_ler_evaluator(make_sw_asced, **LER_settings),
-    #     {
-    #         **general_params,
-    #         **window_params,
-    #         **asced_params,
-    #         "warm_start": False,
-    #     },
-    # ),
-    # Run(
-    #     f"sw-asced-ms_warm_W{window_params['W']}-F{window_params['F']}-d{asced_params['delta']}-b{asced_params['num_batches']}-sw{asced_params['splitter_weight']}",
-    #     make_ler_evaluator(make_sw_asced, **LER_settings),
-    #     {
-    #         **general_params,
-    #         **window_params,
-    #         **asced_params,
-    #         "warm_start": True,
-    #     },
-    # ),
     Run(
-        f"sw-ms_cold_forward_W{window_params['W']}-F{window_params['F']}",
+        "whole-min-sum",
+        make_ler_evaluator(make_min_sum, **eval_settings),
+        {**general_params},
+    ),
+    Run(
+        (
+            f"whole-asced-min-sum_d{asced_params['delta']}"
+            f"-b{asced_params['num_batches']}"
+            f"-sw{asced_params['splitter_weight']}"
+        ),
+        make_ler_evaluator(make_asced, **eval_settings),
+        {**general_params, **asced_params},
+    ),
+    Run(
+        f"sw-cold_forward_W{window_params['W']}-F{window_params['F']}",
         make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
@@ -133,7 +140,7 @@ runs = [
         },
     ),
     Run(
-        f"sw-ms_warm_forward_W{window_params['W']}-F{window_params['F']}",
+        f"sw-warm_forward_W{window_params['W']}-F{window_params['F']}",
         make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
@@ -143,7 +150,7 @@ runs = [
         },
     ),
     Run(
-        f"sw-ms_cold_backward_W{window_params['W']}-F{window_params['F']}",
+        f"sw-cold_backward_W{window_params['W']}-F{window_params['F']}",
         make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
@@ -153,11 +160,55 @@ runs = [
         },
     ),
     Run(
-        f"sw-ms_warm_backward_W{window_params['W']}-F{window_params['F']}",
+        f"sw-warm_backward_W{window_params['W']}-F{window_params['F']}",
         make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
+            "warm_start": True,
+            "reverse_sliding_direction": True,
+        },
+    ),
+    Run(
+        f"sw-asced-cold_forward_W{window_params['W']}-F{window_params['F']}",
+        make_ler_evaluator(make_sw_asced, **eval_settings),
+        {
+            **general_params,
+            **window_params,
+            **asced_params,
+            "warm_start": False,
+            "reverse_sliding_direction": False,
+        },
+    ),
+    Run(
+        f"sw-asced-warm_forward_W{window_params['W']}-F{window_params['F']}",
+        make_ler_evaluator(make_sw_asced, **eval_settings),
+        {
+            **general_params,
+            **window_params,
+            **asced_params,
+            "warm_start": True,
+            "reverse_sliding_direction": False,
+        },
+    ),
+    Run(
+        f"sw-asced-cold_backward_W{window_params['W']}-F{window_params['F']}",
+        make_ler_evaluator(make_sw_asced, **eval_settings),
+        {
+            **general_params,
+            **window_params,
+            **asced_params,
+            "warm_start": False,
+            "reverse_sliding_direction": True,
+        },
+    ),
+    Run(
+        f"sw-asced-warm_backward_W{window_params['W']}-F{window_params['F']}",
+        make_ler_evaluator(make_sw_asced, **eval_settings),
+        {
+            **general_params,
+            **window_params,
+            **asced_params,
             "warm_start": True,
             "reverse_sliding_direction": True,
         },
