@@ -1,4 +1,4 @@
-from coordinator import Run, sweep
+from coordinator import Experiment, Run, Sweep, run
 from util import build_bb_code, make_ler_evaluator
 
 from rust_qldpc import (
@@ -116,110 +116,114 @@ asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 
 runs = [
     Run(
-        "whole-min-sum",
+        {**general_params, "decoder": "whole-min-sum"},
         make_ler_evaluator(make_min_sum, **eval_settings),
-        {**general_params},
     ),
     Run(
-        (
-            f"whole-asced-min-sum_d{asced_params['delta']}"
-            f"-b{asced_params['num_batches']}"
-            f"-sw{asced_params['splitter_weight']}"
-        ),
+        {**general_params, **asced_params, "decoder": "whole-asced-min-sum"},
         make_ler_evaluator(make_asced, **eval_settings),
-        {**general_params, **asced_params},
     ),
     Run(
-        f"sw-cold_forward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
+            "decoder": "sw-min-sum",
             "warm_start": False,
             "reverse_sliding_direction": False,
         },
+        make_ler_evaluator(make_sw_min_sum, **eval_settings),
     ),
     Run(
-        f"sw-warm_forward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
+            "decoder": "sw-min-sum",
             "warm_start": True,
             "reverse_sliding_direction": False,
         },
+        make_ler_evaluator(make_sw_min_sum, **eval_settings),
     ),
     Run(
-        f"sw-cold_backward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
+            "decoder": "sw-min-sum",
             "warm_start": False,
             "reverse_sliding_direction": True,
         },
+        make_ler_evaluator(make_sw_min_sum, **eval_settings),
     ),
     Run(
-        f"sw-warm_backward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_min_sum, **eval_settings),
         {
             **general_params,
             **window_params,
+            "decoder": "sw-min-sum",
             "warm_start": True,
             "reverse_sliding_direction": True,
         },
+        make_ler_evaluator(make_sw_min_sum, **eval_settings),
     ),
     Run(
-        f"sw-asced-cold_forward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_asced, **eval_settings),
         {
             **general_params,
             **window_params,
             **asced_params,
+            "decoder": "sw-asced-min-sum",
             "warm_start": False,
             "reverse_sliding_direction": False,
         },
+        make_ler_evaluator(make_sw_asced, **eval_settings),
     ),
     Run(
-        f"sw-asced-warm_forward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_asced, **eval_settings),
         {
             **general_params,
             **window_params,
             **asced_params,
+            "decoder": "sw-asced-min-sum",
             "warm_start": True,
             "reverse_sliding_direction": False,
         },
+        make_ler_evaluator(make_sw_asced, **eval_settings),
     ),
     Run(
-        f"sw-asced-cold_backward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_asced, **eval_settings),
         {
             **general_params,
             **window_params,
             **asced_params,
+            "decoder": "sw-asced-min-sum",
             "warm_start": False,
             "reverse_sliding_direction": True,
         },
+        make_ler_evaluator(make_sw_asced, **eval_settings),
     ),
     Run(
-        f"sw-asced-warm_backward_W{window_params['W']}-F{window_params['F']}",
-        make_ler_evaluator(make_sw_asced, **eval_settings),
         {
             **general_params,
             **window_params,
             **asced_params,
+            "decoder": "sw-asced-min-sum",
             "warm_start": True,
             "reverse_sliding_direction": True,
         },
+        make_ler_evaluator(make_sw_asced, **eval_settings),
     ),
 ]
 
-sweep(
-    runs,
-    axis="p",
-    axis_values=ps,
-    experiment=experiment,
-    shared={"num_rounds": num_rounds},
-    meta={**eval_settings},
+run(
+    Experiment(
+        experiment,
+        [
+            Sweep(
+                params={
+                    "num_rounds": num_rounds,
+                    "seed": seed,
+                    "max_num_trials": num_trials,
+                    "target_num_errors": eval_settings["target_num_errors"],
+                },
+                axis_name="p",
+                axis_vals=ps,
+                runs=runs,
+            )
+        ],
+    )
 )

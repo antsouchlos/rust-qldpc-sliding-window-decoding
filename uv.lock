@@ -303,7 +303,7 @@ wheels = [
 [[package]]
 name = "coordinator"
 version = "0.1.0"
-source = { git = "https://github.com/antsouchlos/coordinator.git#db1679cb3a98a2cc09be8691419b910138869ec7" }
+source = { git = "https://github.com/antsouchlos/coordinator.git#6ddd527cd15d84c6dab18fc869560ed4733d6ac2" }
 dependencies = [
     { name = "anywidget" },
     { name = "ipywidgets" },

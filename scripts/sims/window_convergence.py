@@ -1,5 +1,5 @@
 import numpy as np
-from coordinator import Run, sweep
+from coordinator import Experiment, Run, Sweep, run
 from tqdm import tqdm
 from util import build_bb_code, build_circuit_and_matrices
 
@@ -123,7 +123,13 @@ def build_window_runs(
             ]
             runs.append(
                 Run(
-                    f"{direction}_W{W}_{decoder_name}",
+                    {
+                        "direction": direction,
+                        "F": F,
+                        "decoder": decoder_name,
+                        "alpha": 1.0,
+                        **decoder_settings,
+                    },
                     make_convergence_evaluator(
                         windows,
                         decoders,
@@ -139,14 +145,6 @@ def build_window_runs(
                         target_num_errors,
                         target_num_satisfied,
                     ),
-                    {
-                        "direction": direction,
-                        "W": W,
-                        "F": F,
-                        "decoder": decoder_name,
-                        "alpha": 1.0,
-                        **decoder_settings,
-                    },
                 )
             )
 
@@ -174,6 +172,7 @@ asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 30}
 code = build_bb_code(code_size)
 _, _, H, _, priors = build_circuit_and_matrices(p, num_rounds, code)
 
+sweeps = []
 for W in window_sizes:
     runs, num_windows = build_window_runs(
         H,
@@ -192,24 +191,25 @@ for W in window_sizes:
         target_num_satisfied,
     )
 
-    sweep(
-        runs,
-        axis="window_index",
-        axis_values=range(1, num_windows + 1),
-        experiment=experiment,
-        shared={
-            "code_name": f"BB{code_size}",
-            "p": p,
-            "num_rounds": num_rounds,
-            "max_iter": max_iter,
-            "seed": seed,
-        },
-        meta={
-            "max_num_trials": max_num_trials,
-            "standard_min_sum_batch_size": min_sum_batch_size,
-            "asced_min_sum_batch_size": asced_batch_size,
-            "seed": seed,
-            "target_num_errors": target_num_errors,
-            "target_num_satisfied": target_num_satisfied,
-        },
+    sweeps.append(
+        Sweep(
+            params={
+                "code_name": f"BB{code_size}",
+                "p": p,
+                "num_rounds": num_rounds,
+                "W": W,
+                "max_iter": max_iter,
+                "seed": seed,
+                "max_num_trials": max_num_trials,
+                "standard_min_sum_batch_size": min_sum_batch_size,
+                "asced_min_sum_batch_size": asced_batch_size,
+                "target_num_errors": target_num_errors,
+                "target_num_satisfied": target_num_satisfied,
+            },
+            axis_name="window_index",
+            axis_vals=range(1, num_windows + 1),
+            runs=runs,
+        )
     )
+
+run(Experiment(experiment, sweeps))

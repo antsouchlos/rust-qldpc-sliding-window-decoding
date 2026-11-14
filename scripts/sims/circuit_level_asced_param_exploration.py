@@ -1,4 +1,4 @@
-from coordinator import Run, sweep
+from coordinator import Experiment, Run, Sweep, run
 from util import build_bb_code, make_ler_evaluator
 
 from rust_qldpc import (
@@ -79,6 +79,12 @@ window_params = {
     "reverse_sliding_direction": False,
 }
 asced_params = {"delta": 2, "num_batches": 4, "splitter_weight": 8}
+asced_run_params = {
+    **run_params,
+    **window_params,
+    **asced_params,
+    "decoder": "asced-ms-cold",
+}
 
 independent_vars = {
     # "splitter_weight": [600, 500, 400, 300, 200, 100, 50, 30, 20, 6, 4],
@@ -95,18 +101,32 @@ independent_vars = {
 #
 
 
-for axis, axis_values in independent_vars.items():
-    sweep(
+run(
+    Experiment(
+        experiment,
         [
-            Run(
-                f"asced-ms_cold_{axis}",
-                make_ler_evaluator(make_sw_asced, code=code, **LER_settings),
-                {**run_params, **window_params, **asced_params},
+            Sweep(
+                params={
+                    "p": p_fixed,
+                    "num_rounds": num_rounds,
+                    "seed": seed,
+                    "max_num_trials": num_trials,
+                    "target_num_errors": LER_settings["target_num_errors"],
+                },
+                axis_name=axis,
+                axis_vals=axis_values,
+                runs=[
+                    Run(
+                        {
+                            key: value
+                            for key, value in asced_run_params.items()
+                            if key != axis
+                        },
+                        make_ler_evaluator(make_sw_asced, code=code, **LER_settings),
+                    )
+                ],
             )
+            for axis, axis_values in independent_vars.items()
         ],
-        axis=axis,
-        axis_values=axis_values,
-        experiment=experiment,
-        shared={"p": p_fixed, "num_rounds": num_rounds},
-        meta=LER_settings,
     )
+)
